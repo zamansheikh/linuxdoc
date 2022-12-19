@@ -1,0 +1,25 @@
+https://www.youtube.com/watch?v=Z2AJxSdae9c&ab_channel=MrBeenMods
+
+
+shamsuzzaman15-4031@diu.edu.bd
+
+
+
+sudo ip link set wlan1 down
+sudo iw dev wlan1 set type managed
+sudo ip link set wlan1 up
+sudo systemctl restart NetworkManager
+
+
+
+sudo systemctl enable snapd.aa-prompt-listener.service           
+sudo systemctl enable snapd.apparmor.service                     enabled         disabled
+sudo systemctl enable snapd.recovery-chooser-trigger.service     disabled        disabled
+sudo systemctl enable snapd.seeded.service                       disabled        disabled
+sudo systemctl enable snapd.service                              disabled        disabled
+sudo systemctl enable snmpd.service 
+
+sudo apparmor_parser -r /etc/apparmor.d/*snap-confine*
+sudo apparmor_parser -r /var/lib/snapd/apparmor/profiles/snap-confine*
+systemctl enable --now snapd.apparmor.service
+
