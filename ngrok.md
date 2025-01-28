@@ -32,8 +32,15 @@ ngrok is a tool that allows you to expose a local server to the internet securel
    - Click **Environment Variables**.
    - Edit the **Path** variable under **System Variables** and add the folder path.
 
-OR USE CHOCO FROM HERE: 
-https://github.com/zamansheikh/LinuxDoctor/blob/main/install_choco.bat
+Alternatively, use Chocolatey for automatic installation:
+1. If Chocolatey is not installed, set it up using the following [batch script](https://github.com/zamansheikh/LinuxDoctor/blob/main/install_choco.bat):
+   ```bash
+   install_choco.bat
+   ```
+2. Install ngrok via Chocolatey:
+   ```bash
+   choco install ngrok
+   ```
 
 ### On macOS/Linux
 1. Open a terminal.
@@ -65,13 +72,13 @@ https://github.com/zamansheikh/LinuxDoctor/blob/main/install_choco.bat
 1. Open your terminal or command prompt.
 2. Run the following command to expose your local server (e.g., running on port 8000):
    ```bash
-   ngrok http http://localhost:8080
+   ngrok http 8000
    ```
-   Or use you local IP and PORT:
-    ```bash
+   Or use your local IP and port:
+   ```bash
    ngrok http http://192.168.10.70:3000
    ```
-4. ngrok will provide a public URL that you can share to access your local server from the internet.
+3. ngrok will provide a public URL that you can share to access your local server from the internet.
 
 ---
 
