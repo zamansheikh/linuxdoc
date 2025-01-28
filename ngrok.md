@@ -32,6 +32,9 @@ ngrok is a tool that allows you to expose a local server to the internet securel
    - Click **Environment Variables**.
    - Edit the **Path** variable under **System Variables** and add the folder path.
 
+OR USE CHOCO FROM HERE: 
+https://github.com/zamansheikh/LinuxDoctor/blob/main/install_choco.bat
+
 ### On macOS/Linux
 1. Open a terminal.
 2. Move the downloaded file to `/usr/local/bin` for global use:
