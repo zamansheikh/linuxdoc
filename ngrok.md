@@ -1,4 +1,4 @@
-![image](https://github.com/user-attachments/assets/0d516989-f26f-4f04-ad85-ea4e7f224002)# Setting Up ngrok
+# Setting Up ngrok
 
 ngrok is a tool that allows you to expose a local server to the internet securely. Follow these steps to set up and use ngrok.
 
