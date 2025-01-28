@@ -1,4 +1,4 @@
-# Setting Up ngrok
+![image](https://github.com/user-attachments/assets/0d516989-f26f-4f04-ad85-ea4e7f224002)# Setting Up ngrok
 
 ngrok is a tool that allows you to expose a local server to the internet securely. Follow these steps to set up and use ngrok.
 
@@ -62,9 +62,13 @@ ngrok is a tool that allows you to expose a local server to the internet securel
 1. Open your terminal or command prompt.
 2. Run the following command to expose your local server (e.g., running on port 8000):
    ```bash
-   ngrok http 8000
+   ngrok http http://localhost:8080
    ```
-3. ngrok will provide a public URL that you can share to access your local server from the internet.
+   Or use you local IP and PORT:
+    ```bash
+   ngrok http http://192.168.10.70:3000
+   ```
+4. ngrok will provide a public URL that you can share to access your local server from the internet.
 
 ---
 
