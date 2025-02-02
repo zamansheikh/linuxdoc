@@ -120,3 +120,108 @@ The issue you're encountering (`host doesn't support requested feature: CPUID.80
 After making the changes, run the QEMU command again. If everything is set up correctly, the `svm` warnings should disappear, and the virtual machine should start without issues.
 
 Let me know if you need further assistance!
+
+
+
+After installing Arch Linux using the QEMU command you provided, you can boot into the installed system by running a slightly modified QEMU command. Specifically, you need to remove the `-cdrom` option (since the installation is complete) and boot directly from the virtual disk (`arch.qcow2`).
+
+Here’s how you can boot into your installed Arch Linux system:
+
+---
+
+### Step 1: Boot into Arch Linux
+Run the following QEMU command to boot from the virtual disk (`arch.qcow2`):
+
+```bash
+qemu-system-x86_64 -accel kvm -vga virtio -m 8G -smp 4 -drive file=arch.qcow2,format=qcow2 -boot d -cpu host
+```
+
+#### Explanation of the Command:
+- `-accel kvm`: Enables hardware acceleration (KVM).
+- `-vga virtio`: Uses the Virtio GPU for better performance.
+- `-m 8G`: Allocates 8 GB of RAM to the virtual machine.
+- `-smp 4`: Allocates 4 CPU cores to the virtual machine.
+- `-drive file=arch.qcow2,format=qcow2`: Uses the `arch.qcow2` disk image where Arch Linux is installed.
+- `-boot d`: Boots from the virtual disk.
+- `-cpu host`: Ensures QEMU uses the host CPU's features.
+
+---
+
+### Step 2: Log in to Arch Linux
+Once the virtual machine boots, you should see the Arch Linux login prompt. Log in using the username and password you set up during installation.
+
+---
+
+### Step 3: Configure Networking (If Needed)
+If your Arch Linux installation does not have internet access, you may need to configure networking. Here’s how:
+
+1. **Check Network Interfaces:**
+   Run the following command to list network interfaces:
+   ```bash
+   ip link
+   ```
+   Look for an interface like `eth0` or `ens3`.
+
+2. **Enable DHCP:**
+   Use `dhcpcd` to automatically configure the network:
+   ```bash
+   dhcpcd eth0
+   ```
+   Replace `eth0` with the appropriate interface name.
+
+3. **Test Internet Connectivity:**
+   Ping a website to verify internet access:
+   ```bash
+   ping google.com
+   ```
+
+---
+
+### Step 4: Install Additional Packages (Optional)
+If you need additional packages (e.g., a desktop environment, web browser, etc.), you can install them using `pacman`. For example:
+
+1. **Install a Desktop Environment (e.g., GNOME):**
+   ```bash
+   sudo pacman -S gnome
+   ```
+
+2. **Install a Web Browser (e.g., Firefox):**
+   ```bash
+   sudo pacman -S firefox
+   ```
+
+3. **Enable and Start Services (e.g., GNOME Display Manager):**
+   ```bash
+   sudo systemctl enable gdm
+   sudo systemctl start gdm
+   ```
+
+---
+
+### Step 5: Shut Down or Reboot
+To shut down the virtual machine, run:
+```bash
+sudo shutdown now
+```
+
+To reboot the virtual machine, run:
+```bash
+sudo reboot
+```
+
+---
+
+### Step 6: Boot into Arch Linux in the Future
+Whenever you want to boot into your installed Arch Linux system, simply run the QEMU command without the `-cdrom` option:
+
+```bash
+qemu-system-x86_64 -accel kvm -vga virtio -m 8G -smp 4 -drive file=arch.qcow2,format=qcow2 -boot d -cpu host
+```
+
+---
+
+### Notes:
+- If you want to use a graphical interface, ensure you have installed a desktop environment (e.g., GNOME, KDE, XFCE) and enabled the display manager (e.g., `gdm`, `sddm`).
+- If you encounter any issues, let me know, and I’ll help you troubleshoot!
+
+Enjoy your Arch Linux virtual machine! 🚀
