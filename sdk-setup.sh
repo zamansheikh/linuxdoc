@@ -25,7 +25,7 @@ sudo pacman -Syu --noconfirm
 # 2. Install Required Dependencies    #
 #######################################
 echo "[2/7] Installing required packages via pacman..."
-# Install git, unzip, xz, zip, glu, and OpenJDK (headless runtime and development kit)
+# Install git, unzip, xz, zip, glu, and OpenJDK (headless runtime and JDK 11)
 sudo pacman -S --noconfirm git unzip xz zip glu jre-openjdk-headless jdk11-openjdk
 
 #########################################
@@ -62,19 +62,25 @@ fi
 #########################################
 echo "[4/7] Setting up Android SDK environment..."
 
-# Define the Android SDK root (default: $HOME/Android/Sdk)
-export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
+# Prefer the standard Arch installation location if it exists.
+if [ -d "/opt/android-sdk" ]; then
+    export ANDROID_SDK_ROOT="/opt/android-sdk"
+else
+    export ANDROID_SDK_ROOT="$HOME/Android/Sdk"
+    mkdir -p "$ANDROID_SDK_ROOT"
+fi
 echo "Setting ANDROID_SDK_ROOT to $ANDROID_SDK_ROOT"
-mkdir -p "$ANDROID_SDK_ROOT"
 
-# Optionally, if sdkmanager is not in your PATH, try to add it temporarily.
+# If sdkmanager is not in PATH, try to add it from known locations.
 if ! command -v sdkmanager >/dev/null 2>&1; then
-    if [ -d "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" ]; then
+    if [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
         export PATH="$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
+    elif [ -x "$ANDROID_SDK_ROOT/tools/bin/sdkmanager" ]; then
+        export PATH="$PATH:$ANDROID_SDK_ROOT/tools/bin"
     fi
 fi
 
-# Check if sdkmanager is now available
+# Verify sdkmanager is now available.
 if ! command -v sdkmanager >/dev/null 2>&1; then
     echo "Error: sdkmanager not found in PATH. Please verify the Android SDK installation."
     exit 1
@@ -130,14 +136,23 @@ fi
 echo "Updating shell configuration file: $SHELL_CONFIG"
 
 # Append environment variable exports if not already present.
-grep -qxF 'export ANDROID_SDK_ROOT=$HOME/Android/Sdk' "$SHELL_CONFIG" || \
-    echo 'export ANDROID_SDK_ROOT=$HOME/Android/Sdk' >> "$SHELL_CONFIG"
+grep -qxF "export ANDROID_SDK_ROOT=" "$SHELL_CONFIG" || \
+    echo "export ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$SHELL_CONFIG"
+
 grep -qxF 'export PATH=$PATH:$ANDROID_SDK_ROOT/platform-tools' "$SHELL_CONFIG" || \
     echo 'export PATH=$PATH:$ANDROID_SDK_ROOT/platform-tools' >> "$SHELL_CONFIG"
+
 grep -qxF 'export PATH=$PATH:$ANDROID_SDK_ROOT/emulator' "$SHELL_CONFIG" || \
     echo 'export PATH=$PATH:$ANDROID_SDK_ROOT/emulator' >> "$SHELL_CONFIG"
-grep -qxF 'export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin' "$SHELL_CONFIG" || \
-    echo 'export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin' >> "$SHELL_CONFIG"
+
+# Add the sdkmanager location to PATH, checking for both new and legacy paths.
+if [ -d "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" ]; then
+    grep -qxF 'export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin' "$SHELL_CONFIG" || \
+        echo 'export PATH=$PATH:$ANDROID_SDK_ROOT/cmdline-tools/latest/bin' >> "$SHELL_CONFIG"
+elif [ -d "$ANDROID_SDK_ROOT/tools/bin" ]; then
+    grep -qxF 'export PATH=$PATH:$ANDROID_SDK_ROOT/tools/bin' "$SHELL_CONFIG" || \
+        echo 'export PATH=$PATH:$ANDROID_SDK_ROOT/tools/bin' >> "$SHELL_CONFIG"
+fi
 
 ######################################################
 # 9. Troubleshooting: Set Java Version (if necessary)#
