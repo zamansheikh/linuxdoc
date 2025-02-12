@@ -334,4 +334,87 @@ To secure your website with HTTPS using **a self-signed SSL certificate**:
 ---
 
 
+The warning message you are seeing:
+
+```
+[warn] 31518#31518: conflicting server name "_" on 0.0.0.0:80, ignored
+[warn] 31518#31518: conflicting server name "_" on [::]:80, ignored
+```
+
+indicates that multiple server blocks are trying to use `server_name _;` on port **80**, causing a conflict.
+
+### **Solution: Fix the Server Block Conflict**
+
+#### **Option 1: Specify an IP Instead of `_`**
+Instead of `server_name _;`, explicitly set your server's IP address:
+
+Edit the Nginx configuration file for your site:
+```bash
+sudo nano /etc/nginx/sites-available/mywebsite
+```
+Update:
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+
+    root /var/www/mywebsite/html;
+    index index.html;
+
+    server_name 192.168.1.100;  # Replace with your actual server IP
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+```
+Save the file and exit.
+
+#### **Option 2: Remove Other Conflicting Server Blocks**
+1. Check existing Nginx configurations:
+   ```bash
+   ls /etc/nginx/sites-enabled/
+   ```
+   If you see **default**, it's likely causing the conflict.
+
+2. Disable the default configuration:
+   ```bash
+   sudo rm /etc/nginx/sites-enabled/default
+   ```
+3. Restart Nginx:
+   ```bash
+   sudo systemctl restart nginx
+   ```
+
+#### **Option 3: Use a More Specific Server Name**
+Instead of using `_`, define a unique name like `localhost`:
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+
+    root /var/www/mywebsite/html;
+    index index.html;
+
+    server_name localhost;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+```
+Restart Nginx after making changes:
+```bash
+sudo systemctl restart nginx
+```
+
+After applying these changes, run:
+```bash
+sudo nginx -t
+```
+and ensure there are no warnings.
+
+Let me know if you need further assistance! 🚀
+
+
 
