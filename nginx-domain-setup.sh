@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Check if the script is running in an interactive shell
+if [[ ! -t 0 ]]; then
+    echo "This script must be run in an interactive shell."
+    exit 1
+fi
+
 # Developer credit
 echo -e "\nDeveloper: Zaman Sheikh\nGitHub: github.com/zamansheikh\n"
 
