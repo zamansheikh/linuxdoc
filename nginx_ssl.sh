@@ -34,9 +34,17 @@ fi
 # Ask if user wants SSL
 read -p "Do you want to set up SSL with Let's Encrypt? (y/n): " SSL_CHOICE
 
-# Remove default Nginx config to prevent redirecting to /lander page
+# Remove default Nginx config to prevent redirecting to the default landing page
 echo "Removing default Nginx configuration..."
-sudo rm -f /etc/nginx/sites-enabled/default
+rm -f /etc/nginx/sites-enabled/default
+
+# Install Certbot if missing
+if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
+  if ! command -v certbot &> /dev/null; then
+    echo "Certbot not found, installing..."
+    apt install -y certbot python3-certbot-nginx
+  fi
+fi
 
 # Create a new Nginx configuration file for the domain
 CONFIG_PATH="/etc/nginx/sites-available/$DOMAIN"
@@ -97,7 +105,27 @@ fi
 # Enable the site configuration by creating a symbolic link
 ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/"
 
-# Test Nginx configuration for errors
+# Request SSL Certificate if chosen
+if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
+  echo "Requesting SSL certificate for $DOMAIN..."
+  
+  # Ensure the Let's Encrypt folder exists
+  mkdir -p /etc/letsencrypt/live/$DOMAIN
+
+  # Run Certbot to issue SSL certificate
+  certbot --nginx -d $DOMAIN -d www.$DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN --redirect
+
+  # Verify SSL certificate exists
+  if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo "SSL certificate generation failed. Please check your domain settings."
+    exit 1
+  fi
+
+  # Allow HTTPS traffic
+  ufw allow 443/tcp
+fi
+
+# Test Nginx configuration
 echo "Testing Nginx configuration..."
 if ! nginx -t; then
   echo "Nginx configuration test failed. Please check your configurations."
@@ -106,7 +134,7 @@ else
   echo "Nginx configuration is valid."
 fi
 
-# Restart Nginx to apply the changes
+# Restart Nginx to apply changes
 echo "Restarting Nginx..."
 systemctl restart nginx
 
@@ -114,34 +142,16 @@ systemctl restart nginx
 echo "Configuring firewall..."
 ufw allow 80/tcp
 ufw allow $PORT/tcp
-
-if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
-  # Install Certbot if SSL is selected
-  if ! command -v certbot &> /dev/null; then
-    echo "Certbot not found, installing..."
-    apt install -y certbot python3-certbot-nginx
-  fi
-
-  # Obtain SSL certificate
-  echo "Obtaining SSL certificate for $DOMAIN..."
-  certbot --nginx -d $DOMAIN -d www.$DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN --redirect
-
-  # Allow HTTPS traffic on port 443
-  ufw allow 443/tcp
-fi
-
-# Reload firewall rules
 ufw reload
 
-# Final restart of Nginx
-echo "Final restart of Nginx..."
-sudo systemctl restart nginx
+# Final Restart of Nginx
+systemctl restart nginx
 
 # Output success message
 if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
-  echo -e "\nSetup complete! Your domain https://$DOMAIN is now secured with SSL."
+  echo -e "\n✅ Setup complete! Your domain **https://$DOMAIN** is now secured with SSL."
 else
-  echo -e "\nSetup complete! Your domain http://$DOMAIN is now pointing to port $PORT."
+  echo -e "\n✅ Setup complete! Your domain **http://$DOMAIN** is now pointing to port $PORT."
 fi
 
 # End of script
