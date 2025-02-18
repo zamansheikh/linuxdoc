@@ -34,7 +34,7 @@ fi
 # Ask if user wants SSL
 read -p "Do you want to set up SSL with Let's Encrypt? (y/n): " SSL_CHOICE
 
-# Remove default Nginx config to prevent redirecting to the default landing page
+# Remove default Nginx config to prevent conflicts
 echo "Removing default Nginx configuration..."
 rm -f /etc/nginx/sites-enabled/default
 
@@ -46,17 +46,52 @@ if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
   fi
 fi
 
-# Create a new Nginx configuration file for the domain
+# Create a new temporary HTTP-only Nginx configuration for the domain
 CONFIG_PATH="/etc/nginx/sites-available/$DOMAIN"
 
-if [ -f "$CONFIG_PATH" ]; then
-  echo "Nginx config for $DOMAIN already exists. Skipping configuration creation."
-else
-  echo "Creating Nginx config for $DOMAIN..."
+echo "Creating temporary HTTP-only Nginx config for $DOMAIN..."
+cat > "$CONFIG_PATH" <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN www.$DOMAIN;
 
-  if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
-    # SSL Configuration
-    cat > "$CONFIG_PATH" <<EOF
+    location / {
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+
+# Enable the temporary HTTP-only config
+ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/"
+
+# Restart Nginx to apply changes
+echo "Restarting Nginx with temporary HTTP configuration..."
+nginx -t && systemctl restart nginx
+
+# Allow necessary ports in firewall
+echo "Configuring firewall..."
+ufw allow 80/tcp
+ufw allow $PORT/tcp
+ufw reload
+
+# Request SSL Certificate if chosen
+if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
+  echo "Requesting SSL certificate for $DOMAIN..."
+  certbot certonly --nginx -d $DOMAIN -d www.$DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN --redirect
+  
+  # Verify SSL certificate exists
+  if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo "SSL certificate generation failed. Please check your domain settings."
+    exit 1
+  fi
+
+  # Update Nginx configuration to use SSL
+  echo "Updating Nginx configuration for SSL..."
+  cat > "$CONFIG_PATH" <<EOF
 server {
     listen 80;
     server_name $DOMAIN www.$DOMAIN;
@@ -82,70 +117,21 @@ server {
     }
 }
 EOF
-  else
-    # HTTP-only Configuration
-    cat > "$CONFIG_PATH" <<EOF
-server {
-    listen 80;
-    server_name $DOMAIN;
 
-    location / {
-        proxy_pass http://127.0.0.1:$PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-EOF
-  fi
-  echo "Nginx config for $DOMAIN created successfully."
-fi
-
-# Enable the site configuration by creating a symbolic link
-ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/"
-
-# Request SSL Certificate if chosen
-if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
-  echo "Requesting SSL certificate for $DOMAIN..."
-  
-  # Ensure the Let's Encrypt folder exists
-  mkdir -p /etc/letsencrypt/live/$DOMAIN
-
-  # Run Certbot to issue SSL certificate
-  certbot --nginx -d $DOMAIN -d www.$DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN --redirect
-
-  # Verify SSL certificate exists
-  if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-    echo "SSL certificate generation failed. Please check your domain settings."
-    exit 1
-  fi
-
-  # Allow HTTPS traffic
+  # Allow HTTPS in firewall
   ufw allow 443/tcp
+  ufw reload
 fi
 
-# Test Nginx configuration
-echo "Testing Nginx configuration..."
-if ! nginx -t; then
-  echo "Nginx configuration test failed. Please check your configurations."
-  exit 1
-else
-  echo "Nginx configuration is valid."
+# Restart Nginx with the final configuration
+echo "Restarting Nginx with SSL enabled..."
+nginx -t && systemctl restart nginx
+
+# Set up auto-renewal for SSL
+if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
+  echo "Setting up auto-renewal for SSL..."
+  certbot renew --dry-run
 fi
-
-# Restart Nginx to apply changes
-echo "Restarting Nginx..."
-systemctl restart nginx
-
-# Allow HTTP traffic on port 80 and the specified port
-echo "Configuring firewall..."
-ufw allow 80/tcp
-ufw allow $PORT/tcp
-ufw reload
-
-# Final Restart of Nginx
-systemctl restart nginx
 
 # Output success message
 if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
