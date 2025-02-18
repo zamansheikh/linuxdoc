@@ -1,60 +1,72 @@
 #!/bin/bash
 
-# Check if the script is running in an interactive shell
-if [[ ! -t 0 ]]; then
-    echo "This script must be run in an interactive shell."
-    exit 1
-fi
-
+# ─────────────────────────────────────────────────────────────────────────────
 # Developer credit
-echo -e "\nDeveloper: Zaman Sheikh\nGitHub: github.com/zamansheikh\n"
+echo -e "\nDeveloper: Zaman Sheikh"
+echo -e "GitHub: github.com/zamansheikh\n"
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Check if the script is running as root
+# 1. Ensure script is run as root
 if [ "$(id -u)" -ne 0 ]; then
   echo "This script must be run as root. Please use sudo."
   exit 1
 fi
 
-# Prompt for the domain name and port
-read -p "Enter your domain (e.g., example.com): " DOMAIN
-read -p "Enter the port number (e.g., 5130): " PORT
+# 2. Check if script is running in an interactive shell
+if [[ ! -t 0 ]]; then
+    echo "This script must be run in an interactive shell."
+    exit 1
+fi
 
-# Check if domain is empty or port is not a number
+# 3. Prompt for the domain name and port
+read -p "Enter your domain (e.g., example.com): " DOMAIN
+read -p "Enter the port number your app listens on (e.g., 3002): " PORT
+
+# Basic validation
 if [[ -z "$DOMAIN" ]] || ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
-  echo "Invalid input. Please provide a valid domain and port."
+  echo "Invalid input. Please provide a valid domain and numeric port."
   exit 1
 fi
 
-# Install Nginx if not installed
+# 4. Install Nginx if not installed
 if ! command -v nginx &> /dev/null; then
   echo "Nginx not found, installing..."
   apt update && apt install -y nginx
 fi
 
-# Ask if user wants SSL
+# 5. Prompt for SSL choice
 read -p "Do you want to set up SSL with Let's Encrypt? (y/n): " SSL_CHOICE
 
-# Remove default Nginx config to prevent conflicts
-echo "Removing default Nginx configuration..."
-rm -f /etc/nginx/sites-enabled/default
+# ─────────────────────────────────────────────────────────────────────────────
+# CLEANUP ANY OLD CONFIG FOR THIS DOMAIN
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Install Certbot if missing
-if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
-  if ! command -v certbot &> /dev/null; then
-    echo "Certbot not found, installing..."
-    apt install -y certbot python3-certbot-nginx
-  fi
+# Remove default config to avoid conflicts
+if [ -f "/etc/nginx/sites-enabled/default" ]; then
+  echo "Removing default Nginx configuration..."
+  rm -f /etc/nginx/sites-enabled/default
 fi
 
-# Create a new temporary HTTP-only Nginx configuration for the domain
+# Remove old domain configs if they exist
+if [ -f "/etc/nginx/sites-enabled/$DOMAIN" ]; then
+  echo "Removing old Nginx config for $DOMAIN from sites-enabled..."
+  rm -f "/etc/nginx/sites-enabled/$DOMAIN"
+fi
+
+if [ -f "/etc/nginx/sites-available/$DOMAIN" ]; then
+  echo "Removing old Nginx config for $DOMAIN from sites-available..."
+  rm -f "/etc/nginx/sites-available/$DOMAIN"
+fi
+
+# 6. Create a minimal HTTP-only Nginx config (temporary or final if no SSL)
 CONFIG_PATH="/etc/nginx/sites-available/$DOMAIN"
 
-echo "Creating temporary HTTP-only Nginx config for $DOMAIN..."
 cat > "$CONFIG_PATH" <<EOF
 server {
     listen 80;
     server_name $DOMAIN www.$DOMAIN;
 
+    # Pass all traffic to your backend on port $PORT
     location / {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_set_header Host \$host;
@@ -65,33 +77,52 @@ server {
 }
 EOF
 
-# Enable the temporary HTTP-only config
-ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/"
+ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/$DOMAIN"
 
-# Restart Nginx to apply changes
-echo "Restarting Nginx with temporary HTTP configuration..."
-nginx -t && systemctl restart nginx
+# 7. Test and reload Nginx
+echo "Testing and reloading Nginx with HTTP-only config..."
+nginx -t && systemctl reload nginx
 
-# Allow necessary ports in firewall
-echo "Configuring firewall..."
-ufw allow 80/tcp
-ufw allow $PORT/tcp
-ufw reload
+# 8. Open firewall ports (if using UFW)
+if command -v ufw &> /dev/null; then
+  echo "Configuring firewall with ufw..."
+  ufw allow 80/tcp 2>/dev/null || true
+  ufw allow $PORT/tcp 2>/dev/null || true
+  # We only open 443 if user wants SSL
+  if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
+    ufw allow 443/tcp 2>/dev/null || true
+  fi
+  # Reload UFW if enabled
+  ufw reload 2>/dev/null || true
+fi
 
-# Request SSL Certificate if chosen
+# 9. If user wants SSL, obtain certificate and update config
 if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
-  echo "Requesting SSL certificate for $DOMAIN..."
-  certbot certonly --nginx -d $DOMAIN -d www.$DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN --redirect
-  
-  # Verify SSL certificate exists
+
+  # Install Certbot + plugin if missing
+  if ! command -v certbot &> /dev/null; then
+    echo "Installing Certbot..."
+    apt update && apt install -y certbot python3-certbot-nginx
+  fi
+
+  echo "Requesting SSL certificate for $DOMAIN (and www.$DOMAIN)..."
+  # Use certbot with the nginx plugin
+  # --redirect will automatically configure HTTP->HTTPS redirection
+  # --non-interactive, --agree-tos, and -m <email> are required for automated usage
+  certbot certonly --nginx \
+    -d "$DOMAIN" -d "www.$DOMAIN" \
+    --non-interactive --agree-tos \
+    -m "admin@$DOMAIN" --redirect
+
+  # If certificate generation failed, exit
   if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-    echo "SSL certificate generation failed. Please check your domain settings."
+    echo "SSL certificate generation failed for $DOMAIN. Please check domain DNS or logs."
     exit 1
   fi
 
-  # Update Nginx configuration to use SSL
-  echo "Updating Nginx configuration for SSL..."
+  # Now create final HTTPS config
   cat > "$CONFIG_PATH" <<EOF
+# Redirect all HTTP requests to HTTPS
 server {
     listen 80;
     server_name $DOMAIN www.$DOMAIN;
@@ -108,6 +139,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
     ssl_trusted_certificate /etc/letsencrypt/live/$DOMAIN/chain.pem;
 
+    # Pass traffic to your backend on port $PORT
     location / {
         proxy_pass http://127.0.0.1:$PORT;
         proxy_set_header Host \$host;
@@ -118,26 +150,18 @@ server {
 }
 EOF
 
-  # Allow HTTPS in firewall
-  ufw allow 443/tcp
-  ufw reload
-fi
+  # Test and reload Nginx with HTTPS config
+  echo "Enabling SSL in Nginx..."
+  nginx -t && systemctl reload nginx
 
-# Restart Nginx with the final configuration
-echo "Restarting Nginx with SSL enabled..."
-nginx -t && systemctl restart nginx
-
-# Set up auto-renewal for SSL
-if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
-  echo "Setting up auto-renewal for SSL..."
+  # Set up auto-renewal test
+  echo "Testing Certbot auto-renewal..."
   certbot renew --dry-run
-fi
 
-# Output success message
-if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
   echo -e "\n✅ Setup complete! Your domain **https://$DOMAIN** is now secured with SSL."
-else
-  echo -e "\n✅ Setup complete! Your domain **http://$DOMAIN** is now pointing to port $PORT."
-fi
+  exit 0
 
-# End of script
+else
+  echo -e "\n✅ Setup complete (HTTP only). Your domain **http://$DOMAIN** points to port $PORT."
+  exit 0
+fi
