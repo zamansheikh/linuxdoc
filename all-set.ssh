@@ -1,102 +1,69 @@
 #!/bin/bash
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Developer credit
-echo -e "\nDeveloper: Zaman Sheikh"
-echo -e "GitHub: github.com/zamansheikh\n"
-# ─────────────────────────────────────────────────────────────────────────────
+# Script metadata
+echo "Developer: Zaman Sheikh"
+echo "GitHub: github.com/zamansheikh"
+echo ""
 
-# 1. Ensure the script is run as root
-if [ "$(id -u)" -ne 0 ]; then
-  echo "This script must be run as root. Please use sudo."
-  exit 1
+# Check for root privileges
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root" 
+   exit 1
 fi
 
-# 2. Check if running in an interactive shell
-if [[ ! -t 0 ]]; then
-    echo "This script must be run in an interactive shell."
-    exit 1
-fi
+# Declare associative array for domains and ports
+declare -A domain_ports
 
-# 3. Prompt for domain and port
+# Input collection
 read -p "Enter your domain (e.g., example.com): " DOMAIN
-read -p "Enter the port number your app listens on (e.g., 3002): " PORT
+read -p "Enter the port number for $DOMAIN: " PRIMARY_PORT
+domain_ports["$DOMAIN"]=$PRIMARY_PORT
 
-if [[ -z "$DOMAIN" ]] || ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
-  echo "Invalid input. Please provide a valid domain and numeric port."
-  exit 1
-fi
-
-# 4. Collect subdomains
 read -p "Do you want to include www.$DOMAIN? (y/n): " INCLUDE_WWW
 if [[ "$INCLUDE_WWW" =~ ^[Yy]$ ]]; then
-  domain_list=("www.$DOMAIN")
-else
-  domain_list=()
+  read -p "Enter the port number for www.$DOMAIN (press Enter to use $PRIMARY_PORT): " WWW_PORT
+  WWW_PORT=${WWW_PORT:-$PRIMARY_PORT}
+  domain_ports["www.$DOMAIN"]=$WWW_PORT
 fi
 
 read -p "Enter additional subdomain prefixes (e.g., dash api), separated by space, or leave blank: " ADDITIONAL_SUBDOMAINS
 for subdomain in $ADDITIONAL_SUBDOMAINS; do
-  domain_list+=("$subdomain.$DOMAIN")
+  full_subdomain="$subdomain.$DOMAIN"
+  read -p "Enter the port number for $full_subdomain: " SUB_PORT
+  domain_ports["$full_subdomain"]=$SUB_PORT
 done
 
-# Add the main domain at the beginning
-domain_list=("$DOMAIN" "${domain_list[@]}")
+read -p "Do you want to set up SSL with Let's Encrypt? (y/n): " SETUP_SSL
 
-# 5. Ensure Nginx is installed
-if ! command -v nginx &> /dev/null; then
-  echo "Nginx not found, installing..."
-  apt update && apt install -y nginx
-fi
-
-# 6. Ask for SSL setup
-read -p "Do you want to set up SSL with Let's Encrypt? (y/n): " SSL_CHOICE
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CLEANUP: Remove default and old configs for this domain
-# ─────────────────────────────────────────────────────────────────────────────
-if [ -f "/etc/nginx/sites-enabled/default" ]; then
-  echo "Removing default Nginx configuration..."
-  rm -f /etc/nginx/sites-enabled/default
-fi
-
-if [ -f "/etc/nginx/sites-enabled/$DOMAIN" ]; then
-  echo "Removing old Nginx config for $DOMAIN from sites-enabled..."
-  rm -f "/etc/nginx/sites-enabled/$DOMAIN"
-fi
-
-if [ -f "/etc/nginx/sites-available/$DOMAIN" ]; then
-  echo "Removing old Nginx config for $DOMAIN from sites-available..."
-  rm -f "/etc/nginx/sites-available/$DOMAIN"
-fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Ensure directory exists for ACME challenges
-# ─────────────────────────────────────────────────────────────────────────────
-ACME_DIR="/var/www/certbot"
-mkdir -p "$ACME_DIR"
-chown -R www-data:www-data "$ACME_DIR"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Create temporary HTTP-only Nginx config with ACME challenge exception
-# ─────────────────────────────────────────────────────────────────────────────
+# Define paths
 CONFIG_PATH="/etc/nginx/sites-available/$DOMAIN"
+LINK_PATH="/etc/nginx/sites-enabled/$DOMAIN"
+ACME_DIR="/var/www/letsencrypt"
 
-cat > "$CONFIG_PATH" <<EOF
+# Cleanup old configurations
+echo "Removing old Nginx config for $DOMAIN from sites-enabled..."
+rm -f "$LINK_PATH"
+echo "Removing old Nginx config for $DOMAIN from sites-available..."
+rm -f "$CONFIG_PATH"
+
+# Create ACME challenge directory
+mkdir -p "$ACME_DIR"
+
+# Generate initial HTTP-only Nginx configuration
+echo "Generating HTTP-only Nginx configuration..."
+for domain in "${!domain_ports[@]}"; do
+  port=${domain_ports[$domain]}
+  cat <<EOF >> "$CONFIG_PATH"
 server {
     listen 80;
-    server_name ${domain_list[@]};
-
-    # Serve ACME challenge files from a static directory
+    server_name $domain;
     location ^~ /.well-known/acme-challenge/ {
         root $ACME_DIR;
         default_type "text/plain";
         try_files \$uri =404;
     }
-
-    # Proxy all other traffic to the backend
     location / {
-        proxy_pass http://127.0.0.1:$PORT;
+        proxy_pass http://127.0.0.1:$port;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -104,70 +71,60 @@ server {
     }
 }
 EOF
+done
 
-ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/$DOMAIN"
+# Enable configuration
+ln -sf "$CONFIG_PATH" "$LINK_PATH"
 
-# 7. Test and reload Nginx with the new HTTP config
+# Test and reload Nginx
 echo "Testing and reloading Nginx with HTTP-only config..."
 nginx -t && systemctl reload nginx
 
-# 8. Configure firewall (if using UFW)
-if command -v ufw &> /dev/null; then
-  echo "Configuring firewall with ufw..."
-  ufw allow 80/tcp 2>/dev/null || true
-  if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
-    ufw allow 443/tcp 2>/dev/null || true
-  fi
-  ufw reload 2>/dev/null || true
-fi
+# Configure firewall
+echo "Configuring firewall with ufw..."
+ufw allow 80/tcp
+ufw allow 443/tcp
 
-# 9. If SSL is desired, obtain certificate and update config
-if [[ "$SSL_CHOICE" =~ ^[Yy]$ ]]; then
-
-  # Install Certbot if necessary
+if [[ "$SETUP_SSL" =~ ^[Yy]$ ]]; then
+  # Install Certbot if not present
   if ! command -v certbot &> /dev/null; then
     echo "Installing Certbot..."
-    apt update && apt install -y certbot python3-certbot-nginx
+    apt update
+    apt install -y certbot python3-certbot-nginx
   fi
 
-  echo "Requesting SSL certificate for ${domain_list[@]}..."
-  certbot certonly --nginx $(for d in "${domain_list[@]}"; do echo -d "$d"; done) \
-    --non-interactive --agree-tos \
-    -m "admin@$DOMAIN" --redirect
+  # Request SSL certificate
+  echo "Requesting SSL certificate for ${!domain_ports[@]}..."
+  certbot certonly --nginx --cert-name "$DOMAIN" $(for d in "${!domain_ports[@]}"; do echo -d "$d"; done) --non-interactive --agree-tos -m "admin@$DOMAIN"
 
-  # Verify certificate generation
-  if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-    echo "SSL certificate generation failed for $DOMAIN. Please check domain DNS or logs."
-    exit 1
-  fi
-
-  # Overwrite config with HTTPS configuration
-  cat > "$CONFIG_PATH" <<EOF
-# Redirect HTTP to HTTPS
+  # Check if Certbot succeeded
+  if [ $? -eq 0 ]; then
+    # Overwrite Nginx config with SSL
+    echo "Enabling SSL in Nginx..."
+    > "$CONFIG_PATH" # Clear the file
+    for domain in "${!domain_ports[@]}"; do
+      port=${domain_ports[$domain]}
+      cat <<EOF >> "$CONFIG_PATH"
 server {
     listen 80;
-    server_name ${domain_list[@]};
+    server_name $domain;
     location ^~ /.well-known/acme-challenge/ {
         root $ACME_DIR;
         default_type "text/plain";
         try_files \$uri =404;
     }
     location / {
-        return 301 https://\$host\$request_uri;
+        return 301 https://$domain\$request_uri;
     }
 }
-
 server {
     listen 443 ssl;
-    server_name ${domain_list[@]};
-
+    server_name $domain;
     ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
     ssl_trusted_certificate /etc/letsencrypt/live/$DOMAIN/chain.pem;
-
-    # Proxy to backend
     location / {
-        proxy_pass http://127.0.0.1:$PORT;
+        proxy_pass http://127.0.0.1:$port;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -175,17 +132,28 @@ server {
     }
 }
 EOF
+    done
 
-  echo "Enabling SSL in Nginx..."
-  nginx -t && systemctl reload nginx
+    # Test and reload Nginx
+    nginx -t && systemctl reload nginx
 
-  echo "Testing Certbot auto-renewal..."
-  certbot renew --dry-run
-
-  echo -e "\n✅ Setup complete! Your domains (e.g., https://$DOMAIN) are now secured with SSL."
-  exit 0
-
-else
-  echo -e "\n✅ Setup complete (HTTP only). Your domains (e.g., http://$DOMAIN) point to port $PORT."
-  exit 0
+    # Test Certbot renewal
+    echo "Testing Certbot auto-renewal..."
+    certbot renew --dry-run
+  else
+    echo "SSL setup failed. Continuing with HTTP-only configuration."
+  fi
 fi
+
+# Final message
+echo -e "\n✅ Setup complete! The following domains are now configured:"
+for domain in "${!domain_ports[@]}"; do
+  if [[ "$SETUP_SSL" =~ ^[Yy]$ ]] && [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo " - https://$domain"
+  else
+    echo " - http://$domain"
+  fi
+done
+echo "Note: If you see warnings about conflicting server names, please remove any other Nginx config files defining the same domains."
+echo "Inbox-Buddy: Your AI Email Assistant"
+echo "Streamline your email with Inbox-Buddy, the AI assistant that organizes your inbox and enhances productivity."
