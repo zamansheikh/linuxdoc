@@ -18,12 +18,13 @@ if [[ ! -t 0 ]]; then
     exit 1
 fi
 
-# 3. Prompt for subdomain
-read -p "Enter your subdomain (e.g., admin.zamansheikh.com): " SUBDOMAIN
+# 3. Prompt for domain
+read -p "Enter your domain (e.g., example.com or admin.example.com): " DOMAIN
 
-# Validate subdomain input (no www, not a main domain)
-if [[ -z "$SUBDOMAIN" ]] || [[ "$SUBDOMAIN" =~ ^www\. ]] || ! [[ "$SUBDOMAIN" =~ ^[a-zA-Z0-9-]+\.[a-zA-Z0-9-]+\.[a-zA-Z]{2,}$ ]]; then
-  echo "Invalid input. Please provide a valid subdomain (e.g., admin.zamansheikh.com, not www or main domain)."
+# Validate domain input
+# Allows main domains (e.g., example.com) and subdomains (e.g., admin.example.com)
+if [[ -z "$DOMAIN" ]] || [[ "$DOMAIN" =~ ^www\. ]] || ! [[ "$DOMAIN" =~ ^([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{2,}$ ]]; then
+  echo "Invalid input. Please provide a valid domain (e.g., example.com or admin.example.com, not www)."
   exit 1
 fi
 
@@ -42,16 +43,16 @@ if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CLEANUP: Remove old configs for this subdomain
+# CLEANUP: Remove old configs for this domain
 # ─────────────────────────────────────────────────────────────────────────────
-if [ -f "/etc/nginx/sites-enabled/$SUBDOMAIN" ]; then
-  echo "Removing old Nginx config for $SUBDOMAIN from sites-enabled..."
-  rm -f "/etc/nginx/sites-enabled/$SUBDOMAIN"
+if [ -f "/etc/nginx/sites-enabled/$DOMAIN" ]; then
+  echo "Removing old Nginx config for $DOMAIN from sites-enabled..."
+  rm -f "/etc/nginx/sites-enabled/$DOMAIN"
 fi
 
-if [ -f "/etc/nginx/sites-available/$SUBDOMAIN" ]; then
-  echo "Removing old Nginx config for $SUBDOMAIN from sites-available..."
-  rm -f "/etc/nginx/sites-available/$SUBDOMAIN"
+if [ -f "/etc/nginx/sites-available/$DOMAIN" ]; then
+  echo "Removing old Nginx config for $DOMAIN from sites-available..."
+  rm -f "/etc/nginx/sites-available/$DOMAIN"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,12 +65,12 @@ chown -R www-data:www-data "$ACME_DIR"
 # ─────────────────────────────────────────────────────────────────────────────
 # Create temporary HTTP-only Nginx config with ACME challenge exception
 # ─────────────────────────────────────────────────────────────────────────────
-CONFIG_PATH="/etc/nginx/sites-available/$SUBDOMAIN"
+CONFIG_PATH="/etc/nginx/sites-available/$DOMAIN"
 
 cat > "$CONFIG_PATH" <<EOF
 server {
     listen 80;
-    server_name $SUBDOMAIN;
+    server_name $DOMAIN;
 
     # Serve ACME challenge files from a static directory
     location ^~ /.well-known/acme-challenge/ {
@@ -89,7 +90,7 @@ server {
 }
 EOF
 
-ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/$SUBDOMAIN"
+ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/$DOMAIN"
 
 # 6. Test and reload Nginx with the new HTTP config
 echo "Testing and reloading Nginx with HTTP-only config..."
@@ -111,15 +112,15 @@ if ! command -v certbot &> /dev/null; then
 fi
 
 # 9. Request SSL certificate
-echo "Requesting SSL certificate for $SUBDOMAIN..."
+echo "Requesting SSL certificate for $DOMAIN..."
 certbot certonly --nginx \
-  -d "$SUBDOMAIN" \
+  -d "$DOMAIN" \
   --non-interactive --agree-tos \
-  -m "admin@$SUBDOMAIN" --redirect
+  -m "admin@$DOMAIN" --redirect
 
 # Verify certificate generation
-if [ ! -f "/etc/letsencrypt/live/$SUBDOMAIN/fullchain.pem" ]; then
-  echo "SSL certificate generation failed for $SUBDOMAIN. Please check domain DNS or logs."
+if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+  echo "SSL certificate generation failed for $DOMAIN. Please check domain DNS or logs."
   exit 1
 fi
 
@@ -128,24 +129,24 @@ cat > "$CONFIG_PATH" <<EOF
 # Redirect HTTP to HTTPS
 server {
     listen 80;
-    server_name $SUBDOMAIN;
+    server_name $DOMAIN;
     location ^~ /.well-known/acme-challenge/ {
         root $ACME_DIR;
         default_type "text/plain";
         try_files \$uri =404;
     }
     location / {
-        return 301 https://$SUBDOMAIN\$request_uri;
+        return 301 https://$DOMAIN\$request_uri;
     }
 }
 
 server {
     listen 443 ssl;
-    server_name $SUBDOMAIN;
+    server_name $DOMAIN;
 
-    ssl_certificate /etc/letsencrypt/live/$SUBDOMAIN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$SUBDOMAIN/privkey.pem;
-    ssl_trusted_certificate /etc/letsencrypt/live/$SUBDOMAIN/chain.pem;
+    ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+    ssl_trusted_certificate /etc/letsencrypt/live/$DOMAIN/chain.pem;
 
     # Proxy to backend
     location / {
@@ -166,5 +167,5 @@ nginx -t && systemctl reload nginx
 echo "Testing Certbot auto-renewal..."
 certbot renew --dry-run
 
-echo -e "\n✅ Setup complete! Your subdomain **https://$SUBDOMAIN** is now secured with SSL."
+echo -e "\n✅ Setup complete! Your domain **https://$DOMAIN** is now secured with SSL."
 exit 0
