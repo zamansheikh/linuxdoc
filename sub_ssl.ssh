@@ -1,87 +1,97 @@
 #!/bin/bash
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Developer credit
-echo -e "\nDeveloper: Zaman Sheikh"
-echo -e "GitHub: github.com/zamansheikh\n"
-# ─────────────────────────────────────────────────────────────────────────────
+# Script metadata
+echo "Developer: Zaman Sheikh"
+echo "GitHub: github.com/zamansheikh"
+echo ""
 
-# 1. Ensure the script is run as root
-if [ "$(id -u)" -ne 0 ]; then
-  echo "This script must be run as root. Please use sudo."
-  exit 1
+# Check for root privileges
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root"
+   exit 1
 fi
 
-# 2. Check if running in an interactive shell
-if [[ ! -t 0 ]]; then
-    echo "This script must be run in an interactive shell."
+# Declare associative array for domains and ports
+declare -A domain_ports
+
+# Input collection
+read -p "Enter your domain (e.g., example.com): " DOMAIN
+read -p "Enter the port number for $DOMAIN: " PRIMARY_PORT
+domain_ports["$DOMAIN"]=$PRIMARY_PORT
+
+read -p "Do you want to include www.$DOMAIN? (y/n): " INCLUDE_WWW
+if [[ "$INCLUDE_WWW" =~ ^[Yy]$ ]]; then
+  read -p "Enter the port number for www.$DOMAIN (press Enter to use $PRIMARY_PORT): " WWW_PORT
+  WWW_PORT=${WWW_PORT:-$PRIMARY_PORT}
+  domain_ports["www.$DOMAIN"]=$WWW_PORT
+fi
+
+read -p "Enter additional subdomain prefixes (e.g., api), separated by space, or leave blank: " ADDITIONAL_SUBDOMAINS
+for subdomain in $ADDITIONAL_SUBDOMAINS; do
+  full_subdomain="$subdomain.$DOMAIN"
+  read -p "Enter the port number for $full_subdomain: " SUB_PORT
+  domain_ports["$full_subdomain"]=$SUB_PORT
+done
+
+read -p "Do you want to set up SSL with Let's Encrypt? (y/n): " SETUP_SSL
+
+# Define paths
+ACME_DIR="/var/www/letsencrypt"
+
+# Check for existing conflicting configurations
+echo "Checking for existing configurations..."
+for domain in "${!domain_ports[@]}"; do
+  existing_configs=$(grep -rl "server_name.*$domain" /etc/nginx/ | grep -v "/etc/nginx/sites-available/$domain")
+  if [ -n "$existing_configs" ]; then
+    echo "Error: Found existing configurations for $domain in:"
+    echo "$existing_configs"
+    echo "Please remove or merge these configurations manually and rerun the script."
     exit 1
-fi
+  fi
+done
 
-# 3. Prompt for domain
-read -p "Enter your domain (e.g., example.com or admin.example.com): " DOMAIN
+# Verify backend connectivity
+echo "Verifying backend connectivity..."
+for domain in "${!domain_ports[@]}"; do
+  port=${domain_ports[$domain]}
+  if ! sudo -u www-data curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$port | grep -q "200"; then
+    echo "Warning: Backend at http://127.0.0.1:$port for $domain is not responding with HTTP 200."
+    read -p "Continue anyway? (y/n): " CONTINUE
+    if [[ ! "$CONTINUE" =~ ^[Yy]$ ]]; then
+      exit 1
+    fi
+  fi
+done
 
-# Validate domain input
-# Allows main domains (e.g., example.com) and subdomains (e.g., admin.example.com)
-if [[ -z "$DOMAIN" ]] || [[ "$DOMAIN" =~ ^www\. ]] || ! [[ "$DOMAIN" =~ ^([a-zA-Z0-9-]+\.)*[a-zA-Z0-9-]+\.[a-zA-Z]{2,}$ ]]; then
-  echo "Invalid input. Please provide a valid domain (e.g., example.com or admin.example.com, not www)."
-  exit 1
-fi
+# Cleanup old configurations
+for domain in "${!domain_ports[@]}"; do
+  CONFIG_PATH="/etc/nginx/sites-available/$domain"
+  LINK_PATH="/etc/nginx/sites-enabled/$domain"
+  echo "Removing old Nginx config for $domain from sites-enabled..."
+  rm -f "$LINK_PATH"
+  echo "Removing old Nginx config for $domain from sites-available..."
+  rm -f "$CONFIG_PATH"
+done
 
-# 4. Ensure Nginx is installed
-if ! command -v nginx &> /dev/null; then
-  echo "Nginx not found, installing..."
-  apt update && apt install -y nginx
-fi
-
-# 5. Prompt for port
-read -p "Enter the port number your app listens on (e.g., 3002): " PORT
-
-if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
-  echo "Invalid input. Please provide a numeric port."
-  exit 1
-fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CLEANUP: Remove old configs for this domain
-# ─────────────────────────────────────────────────────────────────────────────
-if [ -f "/etc/nginx/sites-enabled/$DOMAIN" ]; then
-  echo "Removing old Nginx config for $DOMAIN from sites-enabled..."
-  rm -f "/etc/nginx/sites-enabled/$DOMAIN"
-fi
-
-if [ -f "/etc/nginx/sites-available/$DOMAIN" ]; then
-  echo "Removing old Nginx config for $DOMAIN from sites-available..."
-  rm -f "/etc/nginx/sites-available/$DOMAIN"
-fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Ensure directory exists for ACME challenges
-# ─────────────────────────────────────────────────────────────────────────────
-ACME_DIR="/var/www/certbot"
+# Create ACME challenge directory
 mkdir -p "$ACME_DIR"
 chown -R www-data:www-data "$ACME_DIR"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Create temporary HTTP-only Nginx config with ACME challenge exception
-# ─────────────────────────────────────────────────────────────────────────────
-CONFIG_PATH="/etc/nginx/sites-available/$DOMAIN"
-
-cat > "$CONFIG_PATH" <<EOF
+# Generate initial HTTP-only Nginx configuration
+for domain in "${!domain_ports[@]}"; do
+  CONFIG_PATH="/etc/nginx/sites-available/$domain"
+  echo "Generating HTTP-only Nginx configuration for $domain..."
+  cat <<EOF > "$CONFIG_PATH"
 server {
     listen 80;
-    server_name $DOMAIN;
-
-    # Serve ACME challenge files from a static directory
+    server_name $domain;
     location ^~ /.well-known/acme-challenge/ {
         root $ACME_DIR;
         default_type "text/plain";
         try_files \$uri =404;
     }
-
-    # Proxy all other traffic to the backend
     location / {
-        proxy_pass http://127.0.0.1:$PORT;
+        proxy_pass http://127.0.0.1:${domain_ports[$domain]};
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -89,68 +99,59 @@ server {
     }
 }
 EOF
+  ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/$domain"
+done
 
-ln -sf "$CONFIG_PATH" "/etc/nginx/sites-enabled/$DOMAIN"
-
-# 6. Test and reload Nginx with the new HTTP config
+# Test and reload Nginx
 echo "Testing and reloading Nginx with HTTP-only config..."
-nginx -t && systemctl reload nginx
+nginx -t && systemctl reload nginx || exit 1
 
-# 7. Configure firewall (if using UFW)
-if command -v ufw &> /dev/null; then
-  echo "Configuring firewall with ufw..."
-  ufw allow 80/tcp 2>/dev/null || true
-  ufw allow 443/tcp 2>/dev/null || true
-  ufw allow $PORT/tcp 2>/dev/null || true
-  ufw reload 2>/dev/null || true
-fi
+# Configure firewall
+echo "Configuring firewall with ufw..."
+ufw status | grep -q "80/tcp.*ALLOW" || ufw allow 80/tcp
+ufw status | grep -q "443/tcp.*ALLOW" || ufw allow 443/tcp
+ufw reload
 
-# 8. Install Certbot if necessary
-if ! command -v certbot &> /dev/null; then
-  echo "Installing Certbot..."
-  apt update && apt install -y certbot python3-certbot-nginx
-fi
+# SSL setup
+if [[ "$SETUP_SSL" =~ ^[Yy]$ ]]; then
+  # Install Certbot if not present
+  if ! command -v certbot &> /dev/null; then
+    echo "Installing Certbot..."
+    apt update
+    apt install -y certbot python3-certbot-nginx
+  fi
 
-# 9. Request SSL certificate
-echo "Requesting SSL certificate for $DOMAIN..."
-certbot certonly --nginx \
-  -d "$DOMAIN" \
-  --non-interactive --agree-tos \
-  -m "admin@$DOMAIN" --redirect
+  # Request SSL certificate
+  echo "Requesting SSL certificate for ${!domain_ports[@]}..."
+  certbot certonly --nginx --cert-name "$DOMAIN" $(for d in "${!domain_ports[@]}"; do echo -d "$d"; done) --non-interactive --agree-tos -m "admin@$DOMAIN"
 
-# Verify certificate generation
-if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-  echo "SSL certificate generation failed for $DOMAIN. Please check domain DNS or logs."
-  exit 1
-fi
-
-# 10. Overwrite config with HTTPS configuration
-cat > "$CONFIG_PATH" <<EOF
-# Redirect HTTP to HTTPS
+  # Check if Certbot succeeded
+  if [ $? -eq 0 ]; then
+    # Overwrite Nginx config with SSL
+    for domain in "${!domain_ports[@]}"; do
+      CONFIG_PATH="/etc/nginx/sites-available/$domain"
+      echo "Enabling SSL in Nginx for $domain..."
+      cat <<EOF > "$CONFIG_PATH"
 server {
     listen 80;
-    server_name $DOMAIN;
+    server_name $domain;
     location ^~ /.well-known/acme-challenge/ {
         root $ACME_DIR;
         default_type "text/plain";
         try_files \$uri =404;
     }
     location / {
-        return 301 https://$DOMAIN\$request_uri;
+        return 301 https://$domain\$request_uri;
     }
 }
-
 server {
     listen 443 ssl;
-    server_name $DOMAIN;
-
+    server_name $domain;
     ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
     ssl_trusted_certificate /etc/letsencrypt/live/$DOMAIN/chain.pem;
-
-    # Proxy to backend
     location / {
-        proxy_pass http://127.0.0.1:$PORT;
+        proxy_pass http://127.0.0.1:${domain_ports[$domain]};
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -158,14 +159,26 @@ server {
     }
 }
 EOF
+    done
 
-# 11. Test and reload Nginx with HTTPS config
-echo "Enabling SSL in Nginx..."
-nginx -t && systemctl reload nginx
+    # Test and reload Nginx
+    nginx -t && systemctl reload nginx || exit 1
 
-# 12. Test Certbot auto-renewal
-echo "Testing Certbot auto-renewal..."
-certbot renew --dry-run
+    # Test Certbot renewal
+    echo "Testing Certbot auto-renewal..."
+    certbot renew --dry-run
+  else
+    echo "SSL setup failed. Continuing with HTTP-only configuration."
+  fi
+fi
 
-echo -e "\n✅ Setup complete! Your domain **https://$DOMAIN** is now secured with SSL."
-exit 0
+# Final message
+echo -e "\n✅ Setup complete! The following domains are now configured:"
+for domain in "${!domain_ports[@]}"; do
+  if [[ "$SETUP_SSL" =~ ^[Yy]$ ]] && [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo " - https://$domain"
+  else
+    echo " - http://$domain"
+  fi
+done
+echo "Note: If you see warnings about conflicting server names, please check /etc/nginx/ for duplicate configurations."
