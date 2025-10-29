@@ -38,15 +38,17 @@ read -p "Do you want to set up SSL with Let's Encrypt? (y/n): " SETUP_SSL
 # Define paths
 ACME_DIR="/var/www/letsencrypt"
 
-# Check for existing conflicting configurations
+# Check for existing conflicting configurations (only for exact domain matches)
 echo "Checking for existing configurations..."
 for domain in "${!domain_ports[@]}"; do
-  existing_configs=$(grep -rl "server_name.*$domain" /etc/nginx/ | grep -v "/etc/nginx/sites-available/$domain")
-  if [ -n "$existing_configs" ]; then
-    echo "Error: Found existing configurations for $domain in:"
-    echo "$existing_configs"
-    echo "Please remove or merge these configurations manually and rerun the script."
-    exit 1
+  # Only check if there's already a config file for this exact domain
+  if [ -f "/etc/nginx/sites-available/$domain" ]; then
+    echo "Warning: Existing configuration found for $domain at /etc/nginx/sites-available/$domain"
+    read -p "Do you want to overwrite it? (y/n): " OVERWRITE
+    if [[ ! "$OVERWRITE" =~ ^[Yy]$ ]]; then
+      echo "Skipping $domain"
+      unset 'domain_ports[$domain]'
+    fi
   fi
 done
 
