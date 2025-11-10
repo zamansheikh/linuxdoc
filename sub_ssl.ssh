@@ -86,18 +86,15 @@ for domain in "${!domain_ports[@]}"; do
   cat <<EOF > "$CONFIG_PATH"
 server {
     listen 80;
+    listen [::]:80;
     server_name $domain;
-    location ^~ /.well-known/acme-challenge/ {
-        root $ACME_DIR;
-        default_type "text/plain";
-        try_files \$uri =404;
-    }
+
     location / {
         proxy_pass http://127.0.0.1:${domain_ports[$domain]};
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 EOF
