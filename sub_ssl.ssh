@@ -75,8 +75,8 @@ for domain in "${!domain_ports[@]}"; do
   rm -f "$CONFIG_PATH"
 done
 
-# Create ACME challenge directory and subdirectory
-mkdir -p "$ACME_DIR/.well-known/acme-challenge"
+# Create ACME challenge directory
+mkdir -p "$ACME_DIR"
 chown -R www-data:www-data "$ACME_DIR"
 
 # Generate initial HTTP-only Nginx configuration
@@ -120,12 +120,12 @@ if [[ "$SETUP_SSL" =~ ^[Yy]$ ]]; then
   if ! command -v certbot &> /dev/null; then
     echo "Installing Certbot..."
     apt update
-    apt install -y certbot
+    apt install -y certbot python3-certbot-nginx
   fi
 
-  # Request SSL certificate using webroot
+  # Request SSL certificate
   echo "Requesting SSL certificate for ${!domain_ports[@]}..."
-  certbot certonly --webroot -w "$ACME_DIR" --cert-name "$DOMAIN" $(for d in "${!domain_ports[@]}"; do echo -d "$d"; done) --non-interactive --agree-tos -m "admin@$DOMAIN"
+  certbot certonly --nginx --cert-name "$DOMAIN" $(for d in "${!domain_ports[@]}"; do echo -d "$d"; done) --non-interactive --agree-tos -m "admin@$DOMAIN"
 
   # Check if Certbot succeeded
   if [ $? -eq 0 ]; then
