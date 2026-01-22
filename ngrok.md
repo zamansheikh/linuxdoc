@@ -25,6 +25,7 @@ ngrok is a tool that allows you to expose a local server to the internet securel
 ## Step 2: Install ngrok
 
 ### On Windows
+
 1. Extract the downloaded `.zip` file.
 2. Move the `ngrok.exe` file to a folder of your choice (e.g., `C:\ngrok`).
 3. Add the folder to your system's PATH variable (optional but recommended):
@@ -33,7 +34,8 @@ ngrok is a tool that allows you to expose a local server to the internet securel
    - Edit the **Path** variable under **System Variables** and add the folder path.
 
 Alternatively, use Chocolatey for automatic installation:
-1. If Chocolatey is not installed, set it up using the following [batch script](https://github.com/zamansheikh/LinuxDoctor/blob/main/install_choco.bat):
+
+1. If Chocolatey is not installed, set it up using the following [batch script](https://github.com/zamansheikh/linuxdoc/blob/main/install_choco.bat):
    ```bash
    install_choco.bat
    ```
@@ -43,6 +45,7 @@ Alternatively, use Chocolatey for automatic installation:
    ```
 
 ### On macOS/Linux
+
 1. Open a terminal.
 2. Move the downloaded file to `/usr/local/bin` for global use:
    ```bash
@@ -85,18 +88,23 @@ Alternatively, use Chocolatey for automatic installation:
 ## Step 5: Additional Features
 
 ### Subdomain (Pro Feature)
+
 To use a custom subdomain (Pro plan required):
+
 ```bash
 ngrok http --subdomain=your-subdomain 8000
 ```
 
 ### Inspect Traffic
+
 ngrok provides a web interface to inspect traffic:
+
 - Open [http://localhost:4040](http://localhost:4040) in your browser.
 
 ---
 
 ## Step 6: Stop ngrok
+
 To stop ngrok, press `Ctrl+C` in the terminal running ngrok.
 
 ---

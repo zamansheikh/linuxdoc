@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # ==============================================================================
-# Script Name: all.sh
+# Script Name: linuxdoc
 # Description: Automated Nginx Reverse Proxy & SSL Setup (Debian/Arch/RHEL support)
 # Developer: GitHub Copilot (Based on original logic by Zaman Sheikh)
 #
 # Quick Run (without cloning):
-# bash <(curl -sSL https://raw.githubusercontent.com/zamansheikh/linuxdoc/main/all.sh)
+# bash <(curl -sSL https://raw.githubusercontent.com/zamansheikh/linuxdoc/main/linuxdoc)
 # ==============================================================================
 
 # --- Aesthetics & Colors ---
