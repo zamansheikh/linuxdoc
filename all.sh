@@ -17,16 +17,37 @@ NC='\033[0m' # No Color
 
 # --- Helper Functions for GUI-like Experience ---
 
-print_header() {
+show_banner() {
     clear
-    echo -e "${BLUE}============================================================${NC}"
-    echo -e "${BOLD}${CYAN}   $1   ${NC}"
-    echo -e "${BLUE}============================================================${NC}"
+    echo -e "${CYAN}
+    ███████╗███████╗██╗     ██╗     ███╗   ███╗ █████╗  ██████╗ ███████╗██████╗ 
+    ██╔════╝██╔════╝██║     ██║     ████╗ ████║██╔══██╗██╔════╝ ██╔════╝██╔══██╗
+    ███████╗███████╗██║     ██║     ██╔████╔██║███████║██║  ███╗█████╗  ██████╔╝
+    ╚════██║╚════██║██║     ██║     ██║╚██╔╝██║██╔══██║██║   ██║██╔══╝  ██╔══██╗
+    ███████║███████║███████╗███████╗██║ ╚═╝ ██║██║  ██║╚██████╔╝███████╗██║  ██║
+    ╚══════╝╚══════╝╚══════╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝
+    ${NC}"
+    echo -e "${BLUE}==============================================================================${NC}"
+    echo -e "${BOLD}   Automated Nginx Reverse Proxy & SSL Manager${NC}"
+    echo -e "${BOLD}   Developer: Zaman Sheikh${NC}"
+    echo -e "${BOLD}   GitHub: github.com/zamansheikh${NC}"
+    echo -e "${BLUE}==============================================================================${NC}"
     echo ""
 }
 
+print_header() {
+    echo -e ""
+    echo -e "${BLUE}------------------------------------------------------------${NC}"
+    echo -e "${BOLD}${CYAN}   $1   ${NC}"
+    echo -e "${BLUE}------------------------------------------------------------${NC}"
+}
+
+print_info() {
+    echo -e "${BOLD}${CYAN}[INFO]${NC} $1"
+}
+
 print_step() {
-    echo -e "${BOLD}${BLUE}[INFO]${NC} $1..."
+    echo -e "${BOLD}${BLUE}[STEP]${NC} $1..."
 }
 
 print_success() {
@@ -182,20 +203,46 @@ setup_environment() {
     fi
     # (Checking ports logic moved to finalization)
 
-    # 3. Certbot
-    if ! command -v certbot &> /dev/null; then
-        print_warning "Certbot (SSL tool) is missing."
-        if ask_confirm "Install Certbot?" "Y"; then
-            if [[ "$PKG_MANAGER" == "apt" ]]; then
+    # 3. Certbot & Nginx Plugin
+    # We must ensure the Nginx plugin is installed, not just the base certbot command.
+    print_step "Checking Certbot and Nginx Plugin"
+    
+    if [[ "$PKG_MANAGER" == "apt" ]]; then
+        # Debian/Ubuntu
+        if ! dpkg -l | grep -q python3-certbot-nginx; then
+            print_warning "Certbot Nginx plugin is missing."
+            if ask_confirm "Install Certbot and Nginx Plugin?" "Y"; then
                 apt install -y certbot python3-certbot-nginx
-            elif [[ "$PKG_MANAGER" == "pacman" ]]; then
-                pacman -S --noconfirm certbot certbot-nginx
-            elif [[ "$PKG_MANAGER" == "dnf" ]]; then
-                dnf install -y certbot python3-certbot-nginx
             fi
+        else
+            print_success "Certbot Nginx plugin is installed."
+        fi
+    elif [[ "$PKG_MANAGER" == "pacman" ]]; then
+        # Arch
+        if ! pacman -Qi certbot-nginx &> /dev/null; then
+             print_warning "Certbot Nginx plugin is missing."
+             if ask_confirm "Install Certbot Nginx Plugin?" "Y"; then
+                 pacman -S --noconfirm certbot certbot-nginx
+             fi
+        else
+             print_success "Certbot Nginx plugin is installed."
+        fi
+    elif [[ "$PKG_MANAGER" == "dnf" ]]; then
+        # RHEL/CentOS
+        if ! rpm -q python3-certbot-nginx &> /dev/null; then
+             print_warning "Certbot Nginx plugin is missing."
+             if ask_confirm "Install Certbot Nginx Plugin?" "Y"; then
+                 dnf install -y certbot python3-certbot-nginx
+             fi
+        else
+             print_success "Certbot Nginx plugin is installed."
         fi
     else
-        print_success "Certbot is already installed."
+        # Fallback for unknown OS or if manual check required
+        if ! command -v certbot &> /dev/null; then
+            print_warning "Certbot is missing."
+            print_error "Please install 'certbot' and 'python3-certbot-nginx' manually for your OS."
+        fi
     fi
 
     # Ensure nginx folder structure exists (Critical for Arch/Others compatibility)
@@ -491,6 +538,7 @@ finalize() {
 }
 
 # --- Main Execution Flow ---
+show_banner
 detect_os
 setup_environment
 collect_info
