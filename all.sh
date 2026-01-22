@@ -19,20 +19,25 @@ NC='\033[0m' # No Color
 
 show_banner() {
     clear
-    echo -e "${CYAN}
-    ███████╗███████╗██╗     ██╗     ███╗   ███╗ █████╗  ██████╗ ███████╗██████╗ 
-    ██╔════╝██╔════╝██║     ██║     ████╗ ████║██╔══██╗██╔════╝ ██╔════╝██╔══██╗
-    ███████╗███████╗██║     ██║     ██╔████╔██║███████║██║  ███╗█████╗  ██████╔╝
-    ╚════██║╚════██║██║     ██║     ██║╚██╔╝██║██╔══██║██║   ██║██╔══╝  ██╔══██╗
-    ███████║███████║███████╗███████╗██║ ╚═╝ ██║██║  ██║╚██████╔╝███████╗██║  ██║
-    ╚══════╝╚══════╝╚══════╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝
-    ${NC}"
-    echo -e "${BLUE}==============================================================================${NC}"
-    echo -e "${BOLD}   Automated Nginx Reverse Proxy & SSL Manager${NC}"
-    echo -e "${BOLD}   Developer: Zaman Sheikh${NC}"
-    echo -e "${BOLD}   GitHub: github.com/zamansheikh${NC}"
-    echo -e "${BLUE}==============================================================================${NC}"
-    echo ""
+    echo -e "${BOLD}${CYAN}"
+    echo "    ╔═══════════════════════════════════════════════════════════════════════════╗"
+    echo "    ║                                                                           ║"
+    echo "    ║   ███╗   ██╗ ██████╗ ██╗███╗   ██╗██╗  ██╗    ███████╗███████╗██╗       ║"
+    echo "    ║   ████╗  ██║██╔════╝ ██║████╗  ██║╚██╗██╔╝    ██╔════╝██╔════╝██║       ║"
+    echo "    ║   ██╔██╗ ██║██║  ███╗██║██╔██╗ ██║ ╚███╔╝     ███████╗███████╗██║       ║"
+    echo "    ║   ██║╚██╗██║██║   ██║██║██║╚██╗██║ ██╔██╗     ╚════██║╚════██║██║       ║"
+    echo "    ║   ██║ ╚████║╚██████╔╝██║██║ ╚████║██╔╝ ██╗    ███████║███████║███████╗  ║"
+    echo "    ║   ╚═╝  ╚═══╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝    ╚══════╝╚══════╝╚══════╝  ║"
+    echo "    ║                                                                           ║"
+    echo "    ║              ${GREEN}Automated Nginx Reverse Proxy & SSL Manager${CYAN}              ║"
+    echo "    ║                                                                           ║"
+    echo "    ╠═══════════════════════════════════════════════════════════════════════════╣"
+    echo "    ║  ${YELLOW}Developer:${NC}${CYAN}  Zaman Sheikh                                                  ║"
+    echo "    ║  ${YELLOW}GitHub:${NC}${CYAN}     github.com/zamansheikh                                        ║"
+    echo "    ║  ${YELLOW}Version:${NC}${CYAN}    2.0 Professional Edition                                      ║"
+    echo "    ╚═══════════════════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    sleep 1
 }
 
 print_header() {
@@ -89,6 +94,34 @@ press_enter() {
     read -p "Press [Enter] to continue..."
 }
 
+show_progress() {
+    local duration=$1
+    local message="$2"
+    local elapsed=0
+    echo -ne "${message} "
+    while [ $elapsed -lt $duration ]; do
+        echo -ne "${CYAN}.${NC}"
+        sleep 0.5
+        elapsed=$((elapsed + 1))
+    done
+    echo -e " ${GREEN}✓${NC}"
+}
+
+show_spinner() {
+    local pid=$1
+    local message="$2"
+    local spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local i=0
+    
+    echo -ne "${message} "
+    while kill -0 $pid 2>/dev/null; do
+        i=$(( (i+1) %10 ))
+        echo -ne "\r${message} ${CYAN}${spin:$i:1}${NC}"
+        sleep 0.1
+    done
+    echo -e "\r${message} ${GREEN}✓${NC}    "
+}
+
 # --- Root Privileges Check ---
 if [[ $EUID -ne 0 ]]; then
    print_error "This script must be run as root."
@@ -103,6 +136,37 @@ PKG_MANAGER=""
 INSTALL_CMD=""
 NGINX_CONF_DIR="/etc/nginx/sites-available"
 NGINX_LINK_DIR="/etc/nginx/sites-enabled"
+LOG_FILE="/var/log/nginx-ssl-setup.log"
+MAX_RETRIES=3
+BACKUP_DIR="/etc/nginx/backups/$(date +%Y%m%d_%H%M%S)"
+
+# --- Logging Function ---
+log_message() {
+    local level="$1"
+    shift
+    local message="$@"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+# --- Backup Function ---
+create_backup() {
+    if [ -d "$NGINX_CONF_DIR" ]; then
+        mkdir -p "$BACKUP_DIR"
+        cp -r "$NGINX_CONF_DIR"/* "$BACKUP_DIR/" 2>/dev/null || true
+        log_message "INFO" "Backup created at $BACKUP_DIR"
+    fi
+}
+
+# --- Rollback Function ---
+rollback_config() {
+    if [ -d "$BACKUP_DIR" ]; then
+        print_warning "Rolling back to previous configuration..."
+        cp -r "$BACKUP_DIR"/* "$NGINX_CONF_DIR/" 2>/dev/null || true
+        systemctl reload nginx 2>/dev/null || true
+        print_success "Rollback completed."
+        log_message "INFO" "Configuration rolled back from $BACKUP_DIR"
+    fi
+}
 
 # --- 1. OS Detection ---
 detect_os() {
@@ -149,37 +213,62 @@ detect_os() {
 check_install() {
     local pkg_cmd=$1
     local pkg_name=$2
-    local install_pkg_name=${3:-$2} # Optional: different name for installation
+    local install_pkg_name=${3:-$2}
+    local retry_count=0
 
     if command -v "$pkg_cmd" &> /dev/null; then
-        print_success "$pkg_name is already installed. Skipping."
-    else
-        print_warning "$pkg_name is missing."
-        if ask_confirm "Do you want to install $pkg_name now?" "Y"; then
-            print_step "Installing $pkg_name"
-            if [[ "$PKG_MANAGER" == "unknown" ]]; then
-                print_error "Cannot auto-install on this OS. Please install $pkg_name manually."
-                exit 1
-            fi
-            
-            # Run update once if needed (basic logic)
-            if [[ ! -f /tmp/update_done ]]; then
-                eval "$UPDATE_CMD" &> /dev/null
-                touch /tmp/update_done
-            fi
-
-            eval "$INSTALL_CMD $install_pkg_name"
-            
-            if command -v "$pkg_cmd" &> /dev/null; then
-                print_success "$pkg_name installed successfully."
-            else
-                print_error "Failed to install $pkg_name. Please check your package manager."
-                exit 1
-            fi
-        else
-            print_error "$pkg_name is required to proceed. Exiting."
+        echo -e "${GREEN}✓${NC} $pkg_name is already installed."
+        log_message "INFO" "$pkg_name already installed"
+        return 0
+    fi
+    
+    print_warning "$pkg_name is not installed."
+    if ! ask_confirm "Do you want to install $pkg_name now?" "Y"; then
+        print_error "$pkg_name is required to proceed. Exiting."
+        log_message "ERROR" "User declined to install $pkg_name"
+        exit 1
+    fi
+    
+    while [ $retry_count -lt $MAX_RETRIES ]; do
+        print_step "Installing $pkg_name (Attempt $((retry_count + 1))/$MAX_RETRIES)"
+        
+        if [[ "$PKG_MANAGER" == "unknown" ]]; then
+            print_error "Cannot auto-install on this OS. Please install $pkg_name manually."
+            log_message "ERROR" "Unknown package manager"
             exit 1
         fi
+        
+        # Run update once
+        if [[ ! -f /tmp/update_done ]]; then
+            print_info "Updating package lists..."
+            eval "$UPDATE_CMD" &> /tmp/pkg_update.log
+            touch /tmp/update_done
+        fi
+
+        # Attempt installation
+        if eval "$INSTALL_CMD $install_pkg_name" &> /tmp/pkg_install.log; then
+            if command -v "$pkg_cmd" &> /dev/null; then
+                print_success "$pkg_name installed successfully."
+                log_message "INFO" "$pkg_name installed successfully"
+                return 0
+            fi
+        fi
+        
+        retry_count=$((retry_count + 1))
+        if [ $retry_count -lt $MAX_RETRIES ]; then
+            print_warning "Installation failed. Retrying..."
+            sleep 2
+        fi
+    done
+    
+    print_error "Failed to install $pkg_name after $MAX_RETRIES attempts."
+    log_message "ERROR" "Failed to install $pkg_name after $MAX_RETRIES attempts"
+    
+    if ask_confirm "Continue without $pkg_name? (Not recommended)" "N"; then
+        print_warning "Continuing without $pkg_name..."
+        return 1
+    else
+        exit 1
     fi
 }
 
@@ -335,33 +424,66 @@ collect_info() {
 
 # --- 4. Logic Execution ---
 verify_backends() {
-    print_header "Verifying Backends"
+    print_header "Backend Connectivity Verification"
+    
+    local all_ok=true
+    echo ""
     
     for domain in "${!domain_ports[@]}"; do
         port=${domain_ports[$domain]}
-        echo -ne "Checking $domain -> 127.0.0.1:$port ... "
+        echo -ne "  ${CYAN}→${NC} Testing $domain:$port ... "
         
-        # Simple curl check only if possible
-        if check_code=$(sudo -u www-data timeout 3 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$port 2>/dev/null); then
-            if [[ "$check_code" =~ ^[23] ]]; then
-                echo -e "${GREEN}OK ($check_code)${NC}"
-            else
-                echo -e "${YELLOW}Warning ($check_code)${NC}"
-                print_warning "Backend returned HTTP $check_code (non-standard)."
-                if ! ask_confirm "Continue configuration for $domain anyway?"; then
-                    unset domain_ports["$domain"]
-                    continue
+        local retry=0
+        local connected=false
+        
+        while [ $retry -lt 3 ]; do
+            # Try multiple methods to check connectivity
+            if timeout 2 bash -c "</dev/tcp/127.0.0.1/$port" 2>/dev/null; then
+                connected=true
+                break
+            elif command -v curl &> /dev/null; then
+                if check_code=$(timeout 3 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:$port 2>/dev/null); then
+                    if [[ "$check_code" =~ ^[23] ]]; then
+                        echo -e "${GREEN}✓ ONLINE${NC} (HTTP $check_code)"
+                        log_message "INFO" "Backend $domain:$port is responding (HTTP $check_code)"
+                        connected=true
+                        break
+                    fi
                 fi
             fi
+            retry=$((retry + 1))
+            sleep 0.5
+        done
+        
+        if [ "$connected" = true ]; then
+            echo -e "${GREEN}✓ ONLINE${NC}"
+            log_message "INFO" "Backend $domain:$port is accessible"
         else
-            echo -e "${RED}FAILED${NC}"
-            print_error "Could not connect to localhost:$port."
-            if ! ask_confirm "Is the backend server running? Continue anyway?"; then
+            echo -e "${RED}✗ OFFLINE${NC}"
+            all_ok=false
+            log_message "WARNING" "Backend $domain:$port is not accessible"
+            
+            print_warning "Cannot connect to localhost:$port for $domain."
+            echo -e "  ${YELLOW}Possible reasons:${NC}"
+            echo "    • Backend application is not running"
+            echo "    • Application is listening on a different port"
+            echo "    • Firewall blocking localhost connections"
+            echo ""
+            
+            if ask_confirm "Continue with $domain configuration anyway?" "N"; then
+                print_info "Will configure $domain (ensure backend starts later)"
+            else
+                print_warning "Skipping $domain configuration"
                 unset domain_ports["$domain"]
-                continue
             fi
         fi
     done
+    
+    echo ""
+    if [ "$all_ok" = false ]; then
+        print_warning "Some backends are not responding. Configuration will proceed."
+        press_enter
+    fi
 }
 
 clean_existing() {
@@ -384,24 +506,38 @@ clean_existing() {
 }
 
 generate_configs() {
-    print_header "Generating Configurations"
+    print_header "Nginx Configuration Generation"
+    
+    create_backup
     
     ACME_DIR="/var/www/letsencrypt"
     mkdir -p "$ACME_DIR"
-    chown -R www-data:www-data "$ACME_DIR" 2>/dev/null || true # Best effort chown
+    chown -R www-data:www-data "$ACME_DIR" 2>/dev/null || chown -R nginx:nginx "$ACME_DIR" 2>/dev/null || true
+    
+    echo ""
+    local config_count=0
 
     for domain in "${!domain_ports[@]}"; do
         port=${domain_ports[$domain]}
         CONFIG_PATH="$NGINX_CONF_DIR/$domain"
         
-        print_step "Writing HTTP config for $domain"
+        echo -ne "  ${CYAN}→${NC} Creating config for $domain ... "
         
         cat <<EOF > "$CONFIG_PATH"
+# Nginx Configuration for $domain
+# Generated by Nginx SSL Manager
+# Date: $(date)
+
 server {
     listen 80;
     server_name $domain;
     
-    # ACME Challenge for Certbot
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    
+    # ACME Challenge for Let's Encrypt
     location ^~ /.well-known/acme-challenge/ {
         root $ACME_DIR;
         default_type "text/plain";
@@ -417,20 +553,53 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
+        
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
     }
 }
 EOF
-        # Link it
-        ln -sf "$CONFIG_PATH" "$NGINX_LINK_DIR/$domain"
+        
+        if [ $? -eq 0 ]; then
+            ln -sf "$CONFIG_PATH" "$NGINX_LINK_DIR/$domain"
+            echo -e "${GREEN}✓${NC}"
+            config_count=$((config_count + 1))
+            log_message "INFO" "Configuration created for $domain"
+        else
+            echo -e "${RED}✗${NC}"
+            log_message "ERROR" "Failed to create configuration for $domain"
+        fi
     done
 
-    print_step "Checking Nginx syntax..."
-    if nginx -t; then
-        print_success "Syntax OK. Restarting Nginx."
-        systemctl restart nginx
+    echo ""
+    print_info "Generated $config_count configuration file(s)"
+    echo ""
+    print_step "Validating Nginx configuration"
+    
+    if nginx -t 2>&1 | tee /tmp/nginx_test.log; then
+        print_success "Configuration validation passed!"
+        log_message "INFO" "Nginx configuration validated successfully"
+        
+        print_step "Applying configuration (restarting Nginx)"
+        if systemctl restart nginx 2>&1 | tee /tmp/nginx_restart.log; then
+            print_success "Nginx restarted successfully!"
+            log_message "INFO" "Nginx restarted successfully"
+        else
+            print_error "Failed to restart Nginx"
+            log_message "ERROR" "Nginx restart failed"
+            rollback_config
+            exit 1
+        fi
     else
-        print_error "Nginx configuration test failed. Reverting..."
-        # In a real GUI, likely would offer to edit file or rollback.
+        print_error "Nginx configuration validation failed!"
+        log_message "ERROR" "Nginx configuration validation failed"
+        cat /tmp/nginx_test.log
+        
+        if ask_confirm "Rollback to previous configuration?" "Y"; then
+            rollback_config
+        fi
         exit 1
     fi
 }
@@ -505,36 +674,104 @@ EOF
         print_success "Nginx restarted with SSL support."
         
     else
-        print_error "SSL Certificate request failed. Keeping HTTP-only config."
-        print_info "Check firewall settings or domain DNS propagation."
+        print_error "SSL Certificate request failed."
+        log_message "ERROR" "SSL certificate request failed"
+        
+        echo ""
+        echo -e "${YELLOW}Common SSL Setup Issues:${NC}"
+        echo "  • Domain DNS not pointing to this server"
+        echo "  • Firewall blocking ports 80/443"
+        echo "  • Certbot Nginx plugin not properly installed"
+        echo "  • Rate limiting from Let's Encrypt"
+        echo ""
+        
+        if [ -f /var/log/letsencrypt/letsencrypt.log ]; then
+            echo -e "${CYAN}Last 10 lines from Certbot log:${NC}"
+            tail -n 10 /var/log/letsencrypt/letsencrypt.log
+            echo ""
+        fi
+        
+        print_info "Your domains are still accessible via HTTP."
         
         if ask_confirm "Retry SSL setup?" "N"; then
+            print_step "Retrying SSL configuration"
+            sleep 2
             setup_ssl
+        else
+            print_warning "Continuing with HTTP-only configuration."
+            log_message "WARNING" "User chose to skip SSL retry"
         fi
     fi
 }
 
 finalize() {
-    print_header "Finalization"
+    print_header "Finalization & Summary"
 
-    # Firewall ports
+    # Firewall configuration
+    echo -ne "  ${CYAN}→${NC} Configuring firewall ... "
     if command -v ufw &> /dev/null; then
-        ufw allow 80/tcp > /dev/null
-        ufw allow 443/tcp > /dev/null
-        print_success "Firewall configured (Ports 80, 443 opened)."
+        ufw allow 80/tcp > /dev/null 2>&1
+        ufw allow 443/tcp > /dev/null 2>&1
+        echo -e "${GREEN}✓${NC}"
+        log_message "INFO" "Firewall rules configured"
+    elif command -v firewall-cmd &> /dev/null; then
+        firewall-cmd --permanent --add-service=http > /dev/null 2>&1
+        firewall-cmd --permanent --add-service=https > /dev/null 2>&1
+        firewall-cmd --reload > /dev/null 2>&1
+        echo -e "${GREEN}✓${NC}"
+    else
+        echo -e "${YELLOW}⚠ No firewall detected${NC}"
     fi
 
-    echo -e "\n${BOLD}${GREEN}✅ SETUP COMPLETE!${NC}"
-    echo "------------------------------------------------"
+    echo ""
+    echo -e "${BOLD}${GREEN}"
+    echo "    ╔═══════════════════════════════════════════════════════════════════════╗"
+    echo "    ║                      ✅  SETUP COMPLETED SUCCESSFULLY                 ║"
+    echo "    ╚═══════════════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo ""
+    echo -e "${BOLD}${CYAN}📋 Configured Domains:${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
     for domain in "${!domain_ports[@]}"; do
-        if [[ "$SETUP_SSL" == "yes" ]]; then
-            echo -e " - https://$domain  --> localhost:${domain_ports[$domain]}"
+        if [[ "$SETUP_SSL" == "yes" ]] && [ -f "/etc/letsencrypt/live/$MAIN_DOMAIN-bundle/fullchain.pem" ]; then
+            echo -e "  ${GREEN}🔒${NC} https://${BOLD}$domain${NC}"
+            echo -e "     ${CYAN}↳${NC} Backend: localhost:${domain_ports[$domain]}"
         else
-            echo -e " - http://$domain   --> localhost:${domain_ports[$domain]}"
+            echo -e "  ${YELLOW}🌐${NC} http://${BOLD}$domain${NC}"
+            echo -e "     ${CYAN}↳${NC} Backend: localhost:${domain_ports[$domain]}"
         fi
     done
-    echo "------------------------------------------------"
-    echo -e "${Cyan}Advice:${NC} If you see a 'Welcome to Nginx' page instead of your app, check if your app is really running on the specified port."
+    
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    echo -e "${BOLD}${CYAN}📝 Important Notes:${NC}"
+    echo -e "  ${YELLOW}•${NC} Nginx config location: ${CYAN}$NGINX_CONF_DIR${NC}"
+    echo -e "  ${YELLOW}•${NC} Backup location: ${CYAN}$BACKUP_DIR${NC}"
+    echo -e "  ${YELLOW}•${NC} Log file: ${CYAN}$LOG_FILE${NC}"
+    echo ""
+    
+    echo -e "${BOLD}${CYAN}🔍 Troubleshooting Tips:${NC}"
+    echo -e "  ${YELLOW}•${NC} Test Nginx config: ${CYAN}nginx -t${NC}"
+    echo -e "  ${YELLOW}•${NC} Reload Nginx: ${CYAN}systemctl reload nginx${NC}"
+    echo -e "  ${YELLOW}•${NC} View Nginx logs: ${CYAN}tail -f /var/log/nginx/error.log${NC}"
+    echo -e "  ${YELLOW}•${NC} Check backend: ${CYAN}curl http://localhost:PORT${NC}"
+    echo ""
+    
+    if [[ "$SETUP_SSL" == "yes" ]]; then
+        echo -e "${BOLD}${CYAN}🔐 SSL Certificate Info:${NC}"
+        echo -e "  ${YELLOW}•${NC} Auto-renewal: ${GREEN}Enabled${NC} (via certbot timer)"
+        echo -e "  ${YELLOW}•${NC} Test renewal: ${CYAN}certbot renew --dry-run${NC}"
+        echo -e "  ${YELLOW}•${NC} Certificate expires: ${CYAN}~90 days from now${NC}"
+        echo ""
+    fi
+    
+    log_message "INFO" "Setup completed successfully"
+    
+    echo -e "${GREEN}${BOLD}Thank you for using Nginx SSL Manager!${NC}"
+    echo -e "${CYAN}For issues or contributions: github.com/zamansheikh${NC}"
+    echo ""
 }
 
 # --- Main Execution Flow ---
