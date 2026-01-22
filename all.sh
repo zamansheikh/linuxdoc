@@ -8,63 +8,93 @@
 
 # --- Aesthetics & Colors ---
 BOLD='\033[1m'
+DIM='\033[2m'
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
+WHITE='\033[1;37m'
 NC='\033[0m' # No Color
+
+# Special characters
+CHECK="✓"
+CROSS="✗"
+ARROW="→"
+BULLET="•"
+STAR="★"
 
 # --- Helper Functions for GUI-like Experience ---
 
 show_banner() {
     clear
-    echo -e "${BOLD}${CYAN}"
-    echo "    ╔═══════════════════════════════════════════════════════════════════════════╗"
-    echo "    ║                                                                           ║"
-    echo "    ║   ███╗   ██╗ ██████╗ ██╗███╗   ██╗██╗  ██╗    ███████╗███████╗██╗       ║"
-    echo "    ║   ████╗  ██║██╔════╝ ██║████╗  ██║╚██╗██╔╝    ██╔════╝██╔════╝██║       ║"
-    echo "    ║   ██╔██╗ ██║██║  ███╗██║██╔██╗ ██║ ╚███╔╝     ███████╗███████╗██║       ║"
-    echo "    ║   ██║╚██╗██║██║   ██║██║██║╚██╗██║ ██╔██╗     ╚════██║╚════██║██║       ║"
-    echo "    ║   ██║ ╚████║╚██████╔╝██║██║ ╚████║██╔╝ ██╗    ███████║███████║███████╗  ║"
-    echo "    ║   ╚═╝  ╚═══╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝    ╚══════╝╚══════╝╚══════╝  ║"
-    echo "    ║                                                                           ║"
-    echo "    ║              ${GREEN}Automated Nginx Reverse Proxy & SSL Manager${CYAN}              ║"
-    echo "    ║                                                                           ║"
-    echo "    ╠═══════════════════════════════════════════════════════════════════════════╣"
-    echo "    ║  ${YELLOW}Developer:${NC}${CYAN}  Zaman Sheikh                                                  ║"
-    echo "    ║  ${YELLOW}GitHub:${NC}${CYAN}     github.com/zamansheikh                                        ║"
-    echo "    ║  ${YELLOW}Version:${NC}${CYAN}    2.0 Professional Edition                                      ║"
-    echo "    ╚═══════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo -e "${CYAN}${BOLD}"
+    echo "    ╔════════════════════════════════════════════════════════════════════════════╗"
+    echo "    ║                                                                            ║"
+    echo "    ║    ███╗   ██╗ ██████╗ ██╗███╗   ██╗██╗  ██╗    ███████╗███████╗██╗         ║"
+    echo "    ║    ████╗  ██║██╔════╝ ██║████╗  ██║╚██╗██╔╝    ██╔════╝██╔════╝██║         ║"
+    echo "    ║    ██╔██╗ ██║██║  ███╗██║██╔██╗ ██║ ╚███╔╝     ███████╗███████╗██║         ║"
+    echo "    ║    ██║╚██╗██║██║   ██║██║██║╚██╗██║ ██╔██╗     ╚════██║╚════██║██║         ║"
+    echo "    ║    ██║ ╚████║╚██████╔╝██║██║ ╚████║██╔╝ ██╗    ███████║███████║███████╗    ║"
+    echo "    ║    ╚═╝  ╚═══╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝    ╚══════╝╚══════╝╚══════╝    ║"
+    echo "    ║                                                                            ║"
+    echo -e "    ║           ${GREEN}${BOLD}Automated Nginx Reverse Proxy & SSL Manager${CYAN}             ║"
+    echo "    ║                                                                            ║"
+    echo "    ╠════════════════════════════════════════════════════════════════════════════╣"
+    echo -e "    ║  ${YELLOW}${STAR} Developer:${NC}  ${WHITE}Zaman Sheikh${CYAN}                                               ║"
+    echo -e "    ║  ${YELLOW}${STAR} GitHub:${NC}     ${WHITE}github.com/zamansheikh${CYAN}                                     ║"
+    echo -e "    ║  ${YELLOW}${STAR} Version:${NC}    ${WHITE}2.1 Professional Edition${CYAN}                                   ║"
+    echo "    ╚════════════════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
-    sleep 1
+    echo ""
+    sleep 0.5
 }
 
 print_header() {
-    echo -e ""
-    echo -e "${BLUE}------------------------------------------------------------${NC}"
-    echo -e "${BOLD}${CYAN}   $1   ${NC}"
-    echo -e "${BLUE}------------------------------------------------------------${NC}"
+    echo ""
+    echo -e "${BOLD}${CYAN}╔═══════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${CYAN}║${NC}  ${WHITE}${BOLD}$1${NC}"
+    echo -e "${BOLD}${CYAN}╚═══════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
 }
 
 print_info() {
-    echo -e "${BOLD}${CYAN}[INFO]${NC} $1"
+    echo -e "${CYAN}${BOLD}[ℹ]${NC} $1"
 }
 
 print_step() {
-    echo -e "${BOLD}${BLUE}[STEP]${NC} $1..."
+    echo -e "${BLUE}${BOLD}[${ARROW}]${NC} $1"
 }
 
 print_success() {
-    echo -e "${BOLD}${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}${BOLD}[${CHECK}]${NC} $1"
 }
 
 print_warning() {
-    echo -e "${BOLD}${YELLOW}[WARNING]${NC} $1"
+    echo -e "${YELLOW}${BOLD}[!]${NC} $1"
 }
 
 print_error() {
-    echo -e "${BOLD}${RED}[ERROR]${NC} $1"
+    echo -e "${RED}${BOLD}[${CROSS}]${NC} $1"
+}
+
+draw_line() {
+    local char="${1:-─}"
+    local color="${2:-$CYAN}"
+    echo -e "${color}$(printf '%*s' 76 '' | tr ' ' "$char")${NC}"
+}
+
+animate_dots() {
+    local message="$1"
+    local count=${2:-3}
+    echo -ne "\r  ${CYAN}${message}"
+    for ((i=0; i<count; i++)); do
+        echo -ne "."
+        sleep 0.3
+    done
+    echo -e "${NC}"
 }
 
 ask_confirm() {
@@ -391,47 +421,111 @@ collect_info() {
          domain_ports["www.$MAIN_DOMAIN"]=$WWW_PORT
     fi
 
-    # Config Subdomains
+    # Config Additional Subdomains
     echo ""
-    echo -e "${CYAN}Additional Subdomains${NC}"
-    echo "Enter subdomain prefixes (e.g., 'api' for api.$MAIN_DOMAIN)."
-    echo "Enter 'done' when finished."
+    draw_line "─" "$BLUE"
+    echo ""
+    echo -e "  ${MAGENTA}${BOLD}Additional Subdomains${NC} ${DIM}(Press Enter with empty input to finish)${NC}"
+    echo ""
     
+    local subdomain_count=0
     while true; do
-        read -p "Subdomain prefix (or 'done'): " SUB
-        if [[ "$SUB" == "done" || -z "$SUB" ]]; then
+        echo -ne "  ${CYAN}>${NC} Subdomain prefix ${DIM}(e.g., 'api' for api.$MAIN_DOMAIN)${NC}: "
+        read SUB
+        
+        # Exit loop on empty input
+        if [[ -z "$SUB" ]]; then
+            if [ $subdomain_count -eq 0 ]; then
+                echo -e "  ${YELLOW}${BULLET}${NC} No additional subdomains configured."
+            fi
+            echo ""
             break
+        fi
+        
+        # Validate subdomain format
+        if [[ ! "$SUB" =~ ^[a-zA-Z0-9-]+$ ]]; then
+            print_error "Invalid subdomain format (use only letters, numbers, hyphens)."
+            continue
         fi
         
         FULL_SUB="$SUB.$MAIN_DOMAIN"
         if [[ -n "${domain_ports[$FULL_SUB]}" ]]; then
-            print_warning "$FULL_SUB is already in the list."
+            print_warning "$FULL_SUB is already configured."
             continue
         fi
 
-        read -p "  > Enter backend port for $FULL_SUB: " SUB_PORT
-        domain_ports["$FULL_SUB"]=$SUB_PORT
+        while true; do
+            echo -ne "  ${CYAN}  >${NC} Backend port for ${BOLD}$FULL_SUB${NC}: "
+            read SUB_PORT
+            if [[ "$SUB_PORT" =~ ^[0-9]+$ ]] && [ "$SUB_PORT" -ge 1 ] && [ "$SUB_PORT" -le 65535 ]; then
+                domain_ports["$FULL_SUB"]=$SUB_PORT
+                echo -e "  ${GREEN}${CHECK}${NC} Port ${WHITE}$SUB_PORT${NC} assigned to ${BOLD}$FULL_SUB${NC}"
+                subdomain_count=$((subdomain_count + 1))
+                echo ""
+                break
+            else
+                print_error "Invalid port (must be 1-65535)."
+            fi
+        done
     done
 
+    draw_line "─" "$BLUE"
     echo ""
-    if ask_confirm "Do you want to set up SSL (HTTPS) with Let's Encrypt?"; then
+    
+    # SSL Configuration
+    if ask_confirm "Set up SSL/HTTPS with Let's Encrypt?"; then
         SETUP_SSL="yes"
-        read -p "  > Enter email for notifications: " EMAIL
+        while true; do
+            echo -ne "  ${CYAN}>${NC} Email for SSL notifications: "
+            read EMAIL
+            if [[ "$EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+                echo -e "  ${GREEN}${CHECK}${NC} Email: ${WHITE}$EMAIL${NC}"
+                echo ""
+                break
+            else
+                print_error "Invalid email format."
+            fi
+        done
     else
         SETUP_SSL="no"
+        echo ""
     fi
+
+    # Summary
+    echo ""
+    draw_line "═" "$CYAN"
+    echo -e "  ${BOLD}${WHITE}Configuration Summary:${NC}"
+    draw_line "─" "$BLUE"
+    local count=0
+    for domain in "${!domain_ports[@]}"; do
+        count=$((count + 1))
+        echo -e "  ${CYAN}${count}.${NC} ${WHITE}${domain}${NC} ${ARROW} localhost:${GREEN}${domain_ports[$domain]}${NC}"
+    done
+    if [[ "$SETUP_SSL" == "yes" ]]; then
+        echo -e "  ${GREEN}${CHECK}${NC} SSL/HTTPS: ${GREEN}Enabled${NC}"
+    else
+        echo -e "  ${YELLOW}${BULLET}${NC} SSL/HTTPS: ${YELLOW}Disabled${NC}"
+    fi
+    draw_line "═" "$CYAN"
+    echo ""
+    
+    if ! ask_confirm "Proceed with this configuration?" "Y"; then
+        print_warning "Configuration cancelled by user."
+        exit 0
+    fi
+    echo ""
 }
 
 # --- 4. Logic Execution ---
 verify_backends() {
-    print_header "Backend Connectivity Verification"
+    print_header "🔍 Backend Connectivity Verification"
     
     local all_ok=true
     echo ""
     
     for domain in "${!domain_ports[@]}"; do
         port=${domain_ports[$domain]}
-        echo -ne "  ${CYAN}→${NC} Testing $domain:$port ... "
+        echo -ne "  ${CYAN}${ARROW}${NC} Testing ${WHITE}$domain${NC}:${CYAN}$port${NC} ... "
         
         local retry=0
         local connected=false
@@ -456,10 +550,10 @@ verify_backends() {
         done
         
         if [ "$connected" = true ]; then
-            echo -e "${GREEN}✓ ONLINE${NC}"
+            echo -e "${GREEN}${CHECK} ONLINE${NC}"
             log_message "INFO" "Backend $domain:$port is accessible"
         else
-            echo -e "${RED}✗ OFFLINE${NC}"
+            echo -e "${RED}${CROSS} OFFLINE${NC}"
             all_ok=false
             log_message "WARNING" "Backend $domain:$port is not accessible"
             
@@ -506,8 +600,9 @@ clean_existing() {
 }
 
 generate_configs() {
-    print_header "Nginx Configuration Generation"
+    print_header "⚙️  Nginx Configuration Generation"
     
+    animate_dots "Creating backup of existing configurations" 3
     create_backup
     
     ACME_DIR="/var/www/letsencrypt"
@@ -521,7 +616,7 @@ generate_configs() {
         port=${domain_ports[$domain]}
         CONFIG_PATH="$NGINX_CONF_DIR/$domain"
         
-        echo -ne "  ${CYAN}→${NC} Creating config for $domain ... "
+        echo -ne "  ${CYAN}${ARROW}${NC} Generating ${WHITE}$domain${NC} config ... "
         
         cat <<EOF > "$CONFIG_PATH"
 # Nginx Configuration for $domain
@@ -564,19 +659,19 @@ EOF
         
         if [ $? -eq 0 ]; then
             ln -sf "$CONFIG_PATH" "$NGINX_LINK_DIR/$domain"
-            echo -e "${GREEN}✓${NC}"
+            echo -e "${GREEN}${CHECK}${NC}"
             config_count=$((config_count + 1))
             log_message "INFO" "Configuration created for $domain"
         else
-            echo -e "${RED}✗${NC}"
+            echo -e "${RED}${CROSS}${NC}"
             log_message "ERROR" "Failed to create configuration for $domain"
         fi
     done
 
     echo ""
-    print_info "Generated $config_count configuration file(s)"
+    print_success "Generated ${GREEN}$config_count${NC} configuration file(s)"
     echo ""
-    print_step "Validating Nginx configuration"
+    animate_dots "Validating Nginx configuration" 2
     
     if nginx -t 2>&1 | tee /tmp/nginx_test.log; then
         print_success "Configuration validation passed!"
@@ -609,28 +704,34 @@ setup_ssl() {
         return
     fi
     
-    print_header "SSL Setup (Let's Encrypt)"
+    print_header "🔐 SSL Certificate Setup (Let's Encrypt)"
 
     DOMAINS_TO_CERT=()
+    echo ""
+    echo -e "  ${CYAN}${BULLET}${NC} Preparing SSL certificates for:"
     for domain in "${!domain_ports[@]}"; do
         DOMAINS_TO_CERT+=("-d" "$domain")
+        echo -e "    ${WHITE}${BULLET}${NC} $domain"
     done
 
     if [ ${#DOMAINS_TO_CERT[@]} -eq 0 ]; then
-        print_warning "No domains to securely configure."
+        print_warning "No domains to secure."
         return
     fi
 
-    print_step "Requesting certificates..."
+    echo ""
+    animate_dots "Contacting Let's Encrypt servers" 3
     if certbot certonly --nginx --cert-name "$MAIN_DOMAIN-bundle" "${DOMAINS_TO_CERT[@]}" --non-interactive --agree-tos -m "$EMAIL"; then
-        print_success "Certificates obtained!"
+        print_success "SSL Certificates obtained successfully!"
+        echo ""
         
         # Rewrite configs with SSL
         for domain in "${!domain_ports[@]}"; do
             port=${domain_ports[$domain]}
             CONFIG_PATH="$NGINX_CONF_DIR/$domain"
             
-            print_step "Updating $domain to HTTPS..."
+            echo -ne "  ${CYAN}${ARROW}${NC} Enabling HTTPS for ${WHITE}$domain${NC} ... "
+            sleep 0.2
              cat <<EOF > "$CONFIG_PATH"
 server {
     listen 80;
@@ -668,10 +769,13 @@ server {
     }
 }
 EOF
+            echo -e "${GREEN}${CHECK}${NC}"
         done
         
+        echo ""
+        animate_dots "Applying SSL configuration" 2
         systemctl restart nginx
-        print_success "Nginx restarted with SSL support."
+        print_success "HTTPS enabled for all domains!"
         
     else
         print_error "SSL Certificate request failed."
