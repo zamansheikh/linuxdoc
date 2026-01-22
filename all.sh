@@ -876,7 +876,8 @@ configure_ssl_in_nginx() {
             echo -e "${YELLOW}! No cert found${NC}"
             continue
         fi
-             cat <<EOF > "$CONFIG_PATH"
+        
+        cat <<EOF > "$CONFIG_PATH"
 server {
     listen 80;
     server_name $domain;
@@ -893,8 +894,8 @@ server {
     listen 443 ssl http2;
     server_name $domain;
     
-    ssl_certificate /etc/letsencrypt/live/$MAIN_DOMAIN-bundle/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$MAIN_DOMAIN-bundle/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/$cert_path/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$cert_path/privkey.pem;
     
     # Generic safe SSL settings (can be tuned)
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -913,20 +914,23 @@ server {
     }
 }
 EOF
-            echo -e "${GREEN}${CHECK}${NC}"
-        done
-        
-        echo ""
-        animate_dots "Applying SSL configuration" 2
-        systemctl restart nginx
-        print_success "HTTPS enabled for all domains!"
-        
+        echo -e "${GREEN}${CHECK}${NC}"
+    done
+    
+    echo ""
+    animate_dots "Applying SSL configuration" 2
+    systemctl restart nginx
+    print_success "HTTPS enabled for all domains!"
+}
+
+# --- SSL Setup Failure Handler ---
+ssl_setup_failed() {
     print_error "All SSL certificate methods failed."
     log_message "ERROR" "SSL certificate request failed after all methods"
     
     echo ""
     echo -e "${BOLD}${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BOLD}${RED}║${NC}  ${YELLOW}⚠${NC}  ${BOLD}SSL Setup Failed - Diagnostics${NC}                            ${BOLD}${RED}║${NC}"
+    echo -e "${BOLD}${RED}║${NC}  ${YELLOW}⚠${NC}  ${BOLD}SSL Setup Failed - Diagnostics${NC}                               ${BOLD}${RED}║${NC}"
     echo -e "${BOLD}${RED}╚══════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     
