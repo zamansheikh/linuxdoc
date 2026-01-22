@@ -198,6 +198,27 @@ rollback_config() {
     fi
 }
 
+# --- Test ACME Challenge Access ---
+test_acme_access() {
+    local domain="$1"
+    local test_file="acme-test-$(date +%s).txt"
+    local test_content="ACME_TEST_OK"
+    
+    echo "$test_content" > "$ACME_DIR/$test_file"
+    
+    if command -v curl &> /dev/null; then
+        local response=$(curl -s -o /dev/null -w "%{http_code}" "http://$domain/.well-known/acme-challenge/$test_file" 2>/dev/null)
+        rm -f "$ACME_DIR/$test_file"
+        
+        if [[ "$response" == "200" ]]; then
+            return 0
+        fi
+    fi
+    
+    rm -f "$ACME_DIR/$test_file"
+    return 1
+}
+
 # --- 1. OS Detection ---
 detect_os() {
     print_header "System Detection"
@@ -632,11 +653,15 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
     
-    # ACME Challenge for Let's Encrypt
+    # CRITICAL: ACME Challenge MUST be served by Nginx, not proxied!
+    # This location block is checked FIRST before proxying
     location ^~ /.well-known/acme-challenge/ {
         root $ACME_DIR;
         default_type "text/plain";
         try_files \$uri =404;
+        # Prevent this from being proxied
+        access_log /var/log/nginx/acme-access.log;
+        allow all;
     }
 
     location / {
@@ -653,6 +678,9 @@ server {
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
+        
+        # Don't proxy ACME challenges
+        proxy_intercept_errors on;
     }
 }
 EOF
@@ -699,6 +727,7 @@ EOF
     fi
 }
 
+# --- Advanced SSL Setup with Multiple Methods ---
 setup_ssl() {
     if [[ "$SETUP_SSL" != "yes" ]]; then
         return
@@ -719,19 +748,134 @@ setup_ssl() {
         return
     fi
 
+    # Pre-flight checks
     echo ""
-    animate_dots "Contacting Let's Encrypt servers" 3
-    if certbot certonly --nginx --cert-name "$MAIN_DOMAIN-bundle" "${DOMAINS_TO_CERT[@]}" --non-interactive --agree-tos -m "$EMAIL"; then
+    echo -e "  ${CYAN}${BULLET}${NC} Running pre-flight checks..."
+    
+    # Ensure ACME directory is accessible
+    mkdir -p "$ACME_DIR/.well-known/acme-challenge"
+    chown -R www-data:www-data "$ACME_DIR" 2>/dev/null || chown -R nginx:nginx "$ACME_DIR" 2>/dev/null
+    chmod -R 755 "$ACME_DIR"
+    
+    # Test ACME access
+    local test_passed=0
+    for domain in "${!domain_ports[@]}"; do
+        if test_acme_access "$domain"; then
+            echo -e "    ${GREEN}${CHECK}${NC} ACME challenge path accessible for $domain"
+            test_passed=$((test_passed + 1))
+        else
+            echo -e "    ${YELLOW}!${NC} ACME challenge test failed for $domain (may still work)"
+        fi
+    done
+    
+    echo ""
+    
+    # Method 1: Bundle all domains (fastest if it works)
+    echo -e "  ${CYAN}${BULLET}${NC} ${BOLD}Method 1:${NC} Requesting certificate for all domains together..."
+    animate_dots "  Contacting Let's Encrypt" 2
+    
+    if certbot certonly --nginx --cert-name "$MAIN_DOMAIN-bundle" "${DOMAINS_TO_CERT[@]}" --non-interactive --agree-tos -m "$EMAIL" 2>&1 | tee /tmp/certbot_output.log; then
         print_success "SSL Certificates obtained successfully!"
-        echo ""
+        configure_ssl_in_nginx
+        return 0
+    fi
+    
+    echo -e "  ${YELLOW}${CROSS}${NC} Bundle method failed. Trying alternative methods..."
+    echo ""
+    
+    # Method 2: Try with standalone (temporarily stop nginx)
+    echo -e "  ${CYAN}${BULLET}${NC} ${BOLD}Method 2:${NC} Using standalone authenticator..."
+    print_warning "This will temporarily stop Nginx"
+    
+    systemctl stop nginx
+    sleep 2
+    
+    if certbot certonly --standalone --cert-name "$MAIN_DOMAIN-bundle" "${DOMAINS_TO_CERT[@]}" --non-interactive --agree-tos -m "$EMAIL" 2>&1 | tee /tmp/certbot_output.log; then
+        systemctl start nginx
+        print_success "SSL Certificates obtained via standalone!"
+        configure_ssl_in_nginx
+        return 0
+    fi
+    
+    systemctl start nginx
+    echo -e "  ${YELLOW}${CROSS}${NC} Standalone method failed. Trying individual domains..."
+    echo ""
+    
+    # Method 3: Try each domain individually with webroot
+    echo -e "  ${CYAN}${BULLET}${NC} ${BOLD}Method 3:${NC} Requesting certificates individually (webroot)..."
+    
+    local success_count=0
+    for domain in "${!domain_ports[@]}"; do
+        echo -e "  ${CYAN}${ARROW}${NC} Attempting $domain..."
         
-        # Rewrite configs with SSL
-        for domain in "${!domain_ports[@]}"; do
-            port=${domain_ports[$domain]}
-            CONFIG_PATH="$NGINX_CONF_DIR/$domain"
-            
-            echo -ne "  ${CYAN}${ARROW}${NC} Enabling HTTPS for ${WHITE}$domain${NC} ... "
-            sleep 0.2
+        if certbot certonly --webroot -w "$ACME_DIR" -d "$domain" --cert-name "$domain-cert" --non-interactive --agree-tos -m "$EMAIL" 2>&1 | tee /tmp/certbot_${domain}.log; then
+            echo -e "    ${GREEN}${CHECK}${NC} Success!"
+            success_count=$((success_count + 1))
+        else
+            echo -e "    ${RED}${CROSS}${NC} Failed for $domain"
+        fi
+    done
+    
+    if [ $success_count -gt 0 ]; then
+        print_success "Obtained certificates for $success_count domain(s)"
+        configure_ssl_in_nginx
+        return 0
+    fi
+    
+    echo -e "  ${YELLOW}${CROSS}${NC} Webroot method failed. Trying direct nginx method..."
+    echo ""
+    
+    # Method 4: Simple certbot --nginx for each domain
+    echo -e "  ${CYAN}${BULLET}${NC} ${BOLD}Method 4:${NC} Using certbot --nginx (auto-configure) individually..."
+    
+    success_count=0
+    for domain in "${!domain_ports[@]}"; do
+        echo -e "  ${CYAN}${ARROW}${NC} Attempting $domain with auto-config..."
+        
+        # This method auto-modifies nginx configs
+        if certbot --nginx -d "$domain" --non-interactive --agree-tos -m "$EMAIL" --redirect 2>&1 | tee /tmp/certbot_${domain}_auto.log; then
+            echo -e "    ${GREEN}${CHECK}${NC} Success!"
+            success_count=$((success_count + 1))
+        else
+            echo -e "    ${RED}${CROSS}${NC} Failed for $domain"
+        fi
+    done
+    
+    if [ $success_count -gt 0 ]; then
+        print_success "Successfully configured SSL for $success_count domain(s)!"
+        # Reload to ensure all changes are active
+        systemctl reload nginx
+        return 0
+    fi
+    
+    # All methods failed
+    ssl_setup_failed
+}
+
+# --- Configure SSL in Nginx (for methods that use certonly) ---
+configure_ssl_in_nginx() {
+    echo ""
+    echo -e "  ${CYAN}${BULLET}${NC} Configuring Nginx with SSL certificates..."
+    
+    for domain in "${!domain_ports[@]}"; do
+        port=${domain_ports[$domain]}
+        CONFIG_PATH="$NGINX_CONF_DIR/$domain"
+        
+        echo -ne "  ${CYAN}${ARROW}${NC} Enabling HTTPS for ${WHITE}$domain${NC} ... "
+        sleep 0.2
+        
+        # Find the certificate (could be in bundle or individual)
+        local cert_path=""
+        if [ -f "/etc/letsencrypt/live/$MAIN_DOMAIN-bundle/fullchain.pem" ]; then
+            cert_path="$MAIN_DOMAIN-bundle"
+        elif [ -f "/etc/letsencrypt/live/$domain-cert/fullchain.pem" ]; then
+            cert_path="$domain-cert"
+        elif [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
+            cert_path="$domain"
+        else
+            echo -e "${YELLOW}! No cert found${NC}"
+            continue
+        fi
              cat <<EOF > "$CONFIG_PATH"
 server {
     listen 80;
@@ -777,34 +921,67 @@ EOF
         systemctl restart nginx
         print_success "HTTPS enabled for all domains!"
         
-    else
-        print_error "SSL Certificate request failed."
-        log_message "ERROR" "SSL certificate request failed"
-        
-        echo ""
-        echo -e "${YELLOW}Common SSL Setup Issues:${NC}"
-        echo "  • Domain DNS not pointing to this server"
-        echo "  • Firewall blocking ports 80/443"
-        echo "  • Certbot Nginx plugin not properly installed"
-        echo "  • Rate limiting from Let's Encrypt"
-        echo ""
-        
-        if [ -f /var/log/letsencrypt/letsencrypt.log ]; then
-            echo -e "${CYAN}Last 10 lines from Certbot log:${NC}"
-            tail -n 10 /var/log/letsencrypt/letsencrypt.log
-            echo ""
-        fi
-        
-        print_info "Your domains are still accessible via HTTP."
-        
-        if ask_confirm "Retry SSL setup?" "N"; then
-            print_step "Retrying SSL configuration"
-            sleep 2
-            setup_ssl
+    print_error "All SSL certificate methods failed."
+    log_message "ERROR" "SSL certificate request failed after all methods"
+    
+    echo ""
+    echo -e "${BOLD}${RED}╔══════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${RED}║${NC}  ${YELLOW}⚠${NC}  ${BOLD}SSL Setup Failed - Diagnostics${NC}                            ${BOLD}${RED}║${NC}"
+    echo -e "${BOLD}${RED}╚══════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    
+    echo -e "${CYAN}${BULLET}${NC} ${BOLD}Common Issues:${NC}"
+    echo -e "  ${BULLET} Domain DNS not pointing to this server IP"
+    echo -e "  ${BULLET} Firewall blocking ports 80/443 from internet"
+    echo -e "  ${BULLET} Backend app returning errors for ACME challenges"
+    echo -e "  ${BULLET} Let's Encrypt rate limiting (5 failures/hour)"
+    echo -e "  ${BULLET} Server not reachable from public internet"
+    echo ""
+    
+    echo -e "${CYAN}${BULLET}${NC} ${BOLD}Quick Diagnostics:${NC}"
+    echo -e "  ${BULLET} Check DNS: ${WHITE}dig +short ${!domain_ports[@]} | head -1${NC}"
+    echo -e "  ${BULLET} Check firewall: ${WHITE}ufw status | grep -E '80|443'${NC}"
+    echo -e "  ${BULLET} Test port 80: ${WHITE}curl -I http://yourdomain.com${NC}"
+    echo -e "  ${BULLET} View full log: ${WHITE}cat /var/log/letsencrypt/letsencrypt.log${NC}"
+    echo ""
+    
+    if [ -f /var/log/letsencrypt/letsencrypt.log ]; then
+        echo -e "${CYAN}${BULLET}${NC} ${BOLD}Last Error Details:${NC}"
+        echo -e "${DIM}"
+        tail -n 15 /var/log/letsencrypt/letsencrypt.log | grep -E "(Error|error|ERROR|Failed|failed|FAILED|Detail|Hint)"
+        echo -e "${NC}"
+    fi
+    
+    # Check public IP
+    echo -e "${CYAN}${BULLET}${NC} ${BOLD}Server Information:${NC}"
+    local public_ip=$(curl -s ifconfig.me 2>/dev/null || curl -s icanhazip.com 2>/dev/null || echo "Unable to detect")
+    echo -e "  ${BULLET} Public IP: ${WHITE}$public_ip${NC}"
+    
+    for domain in "${!domain_ports[@]}"; do
+        local domain_ip=$(dig +short "$domain" 2>/dev/null | head -1)
+        if [ -n "$domain_ip" ]; then
+            if [ "$domain_ip" == "$public_ip" ]; then
+                echo -e "  ${GREEN}${CHECK}${NC} $domain points to this server ($domain_ip)"
+            else
+                echo -e "  ${RED}${CROSS}${NC} $domain points to $domain_ip (expected: $public_ip)"
+            fi
         else
-            print_warning "Continuing with HTTP-only configuration."
-            log_message "WARNING" "User chose to skip SSL retry"
+            echo -e "  ${YELLOW}!${NC} $domain DNS lookup failed"
         fi
+    done
+    
+    echo ""
+    print_info "Your domains are still accessible via HTTP."
+    echo ""
+    
+    if ask_confirm "Retry SSL setup with all methods again?" "N"; then
+        echo ""
+        print_step "Retrying SSL configuration"
+        sleep 2
+        setup_ssl
+    else
+        print_warning "Continuing with HTTP-only configuration."
+        log_message "WARNING" "User chose to skip SSL retry"
     fi
 }
 
