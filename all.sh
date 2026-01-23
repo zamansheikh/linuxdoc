@@ -779,6 +779,8 @@ setup_ssl() {
     
     if certbot certonly --nginx --cert-name "$MAIN_DOMAIN-bundle" "${DOMAINS_TO_CERT[@]}" --non-interactive --agree-tos -m "$EMAIL" 2>&1 | tee /tmp/certbot_output.log; then
         print_success "SSL Certificates obtained successfully!"
+        SSL_CERT_MODE="bundle"
+        SSL_CERT_NAME="$MAIN_DOMAIN-bundle"
         configure_ssl_in_nginx
         return 0
     fi
@@ -796,6 +798,8 @@ setup_ssl() {
     if certbot certonly --standalone --cert-name "$MAIN_DOMAIN-bundle" "${DOMAINS_TO_CERT[@]}" --non-interactive --agree-tos -m "$EMAIL" 2>&1 | tee /tmp/certbot_output.log; then
         systemctl start nginx
         print_success "SSL Certificates obtained via standalone!"
+        SSL_CERT_MODE="bundle"
+        SSL_CERT_NAME="$MAIN_DOMAIN-bundle"
         configure_ssl_in_nginx
         return 0
     fi
@@ -821,6 +825,7 @@ setup_ssl() {
     
     if [ $success_count -gt 0 ]; then
         print_success "Obtained certificates for $success_count domain(s)"
+        SSL_CERT_MODE="individual"
         configure_ssl_in_nginx
         return 0
     fi
@@ -869,13 +874,40 @@ configure_ssl_in_nginx() {
         
         # Find the certificate (could be in bundle or individual)
         local cert_path=""
-        if [ -f "/etc/letsencrypt/live/$MAIN_DOMAIN-bundle/fullchain.pem" ]; then
-            cert_path="$MAIN_DOMAIN-bundle"
-        elif [ -f "/etc/letsencrypt/live/$domain-cert/fullchain.pem" ]; then
-            cert_path="$domain-cert"
-        elif [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
-            cert_path="$domain"
+        
+        # Smart detection based on setup mode
+        if [[ "$SSL_CERT_MODE" == "bundle" ]]; then
+            # If we successfully created a bundle, use it for everything
+            if [ -f "/etc/letsencrypt/live/$SSL_CERT_NAME/fullchain.pem" ]; then
+                cert_path="$SSL_CERT_NAME"
+            fi
+        # If explicitly individual mode or fallback/manual detection
+        elif [[ "$SSL_CERT_MODE" == "individual" ]]; then
+            if [ -f "/etc/letsencrypt/live/$domain-cert/fullchain.pem" ]; then
+                cert_path="$domain-cert"
+            elif [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
+                cert_path="$domain"
+            elif [ -f "/etc/letsencrypt/live/$MAIN_DOMAIN-bundle/fullchain.pem" ]; then
+                 # Only use bundle if it mentions this domain? Hard to check in bash easily.
+                 # Fallback: Check if this specific certificate file is what we want.
+                 # Warn if we are using a bundle in individual mode? No, maybe it's mixed.
+                 # But sticking to individual preference:
+                 echo -e "${YELLOW}! Preferring individual cert, but bundle found...${NC}" 
+                 # Actually, if we are here, we didn't find specific certs.
+                 cert_path="$MAIN_DOMAIN-bundle"
+            fi
         else
+            # Legacy/Fallback logic (no mode set?)
+            if [ -f "/etc/letsencrypt/live/$MAIN_DOMAIN-bundle/fullchain.pem" ]; then
+                cert_path="$MAIN_DOMAIN-bundle"
+            elif [ -f "/etc/letsencrypt/live/$domain-cert/fullchain.pem" ]; then
+                cert_path="$domain-cert"
+            elif [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
+                cert_path="$domain"
+            fi
+        fi
+        
+        if [[ -z "$cert_path" ]]; then
             echo -e "${YELLOW}! No cert found${NC}"
             continue
         fi
