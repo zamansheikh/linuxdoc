@@ -872,32 +872,22 @@ configure_ssl_in_nginx() {
         echo -ne "  ${CYAN}${ARROW}${NC} Enabling HTTPS for ${WHITE}$domain${NC} ... "
         sleep 0.2
         
-        # Find the certificate (could be in bundle or individual)
+        # Find the certificate (same logic as before)
         local cert_path=""
         
-        # Smart detection based on setup mode
         if [[ "$SSL_CERT_MODE" == "bundle" ]]; then
-            # If we successfully created a bundle, use it for everything
             if [ -f "/etc/letsencrypt/live/$SSL_CERT_NAME/fullchain.pem" ]; then
                 cert_path="$SSL_CERT_NAME"
             fi
-        # If explicitly individual mode or fallback/manual detection
         elif [[ "$SSL_CERT_MODE" == "individual" ]]; then
             if [ -f "/etc/letsencrypt/live/$domain-cert/fullchain.pem" ]; then
                 cert_path="$domain-cert"
             elif [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ]; then
                 cert_path="$domain"
             elif [ -f "/etc/letsencrypt/live/$MAIN_DOMAIN-bundle/fullchain.pem" ]; then
-                 # Only use bundle if it mentions this domain? Hard to check in bash easily.
-                 # Fallback: Check if this specific certificate file is what we want.
-                 # Warn if we are using a bundle in individual mode? No, maybe it's mixed.
-                 # But sticking to individual preference:
-                 echo -e "${YELLOW}! Preferring individual cert, but bundle found...${NC}" 
-                 # Actually, if we are here, we didn't find specific certs.
-                 cert_path="$MAIN_DOMAIN-bundle"
+                cert_path="$MAIN_DOMAIN-bundle"
             fi
         else
-            # Legacy/Fallback logic (no mode set?)
             if [ -f "/etc/letsencrypt/live/$MAIN_DOMAIN-bundle/fullchain.pem" ]; then
                 cert_path="$MAIN_DOMAIN-bundle"
             elif [ -f "/etc/letsencrypt/live/$domain-cert/fullchain.pem" ]; then
@@ -916,15 +906,20 @@ configure_ssl_in_nginx() {
 server {
     listen 80;
     server_name $domain;
+
+    # ACME Challenge - must stay before redirect
     location ^~ /.well-known/acme-challenge/ {
         root $ACME_DIR;
         default_type "text/plain";
         try_files \$uri =404;
     }
+
+    # CRITICAL FIX: Use 308 instead of 301 -> preserves POST, PUT, DELETE methods
     location / {
-        return 301 https://$domain\$request_uri;
+        return 308 https://\$host\$request_uri;
     }
 }
+
 server {
     listen 443 ssl http2;
     server_name $domain;
@@ -946,6 +941,14 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
+
+        # Added for safety
+        proxy_redirect off;
+        proxy_buffering off;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
     }
 }
 EOF
