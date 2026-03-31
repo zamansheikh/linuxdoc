@@ -264,13 +264,51 @@ replace_or_insert_directive_in_range() {
 apply_global_limit() {
     local size="$1"
     local timeout="$2"
+    local nginx_conf="/etc/nginx/nginx.conf"
 
     mkdir -p "$(dirname "$DEFAULT_GLOBAL_FILE")"
     backup_file "$DEFAULT_GLOBAL_FILE"
 
+    # Avoid duplicate global directives in the same http context.
+    # If nginx.conf already defines these, remove them from http{} and keep
+    # this managed conf.d file as the single source of truth.
+    if [[ -f "$nginx_conf" ]]; then
+        local http_range
+        http_range="$(find_http_block_range "$nginx_conf")"
+        if [[ -n "$http_range" ]]; then
+            local http_start http_end tmp_conf changed
+            http_start="${http_range%%:*}"
+            http_end="${http_range##*:}"
+            tmp_conf="$(mktemp)"
+
+            awk -v s="$http_start" -v e="$http_end" '
+                NR < s || NR > e { print; next }
+                NR >= s && NR <= e && $0 ~ /^[[:space:]]*client_max_body_size[[:space:]]+/ { next }
+                NR >= s && NR <= e && $0 ~ /^[[:space:]]*client_body_timeout[[:space:]]+/ { next }
+                { print }
+            ' "$nginx_conf" > "$tmp_conf"
+
+            changed="no"
+            if ! cmp -s "$nginx_conf" "$tmp_conf"; then
+                local nginx_conf_backup
+                nginx_conf_backup="${nginx_conf}.bak.$(date +%Y%m%d_%H%M%S)"
+                cp -a "$nginx_conf" "$nginx_conf_backup"
+                mv "$tmp_conf" "$nginx_conf"
+                changed="yes"
+                print_ok "Backup created: $nginx_conf_backup"
+            else
+                rm -f "$tmp_conf"
+            fi
+
+            if [[ "$changed" == "yes" ]]; then
+                print_info "Removed global client_max_body_size/client_body_timeout from nginx.conf http block"
+            fi
+        fi
+    fi
+
     # Normalize existing line(s) in managed file if present
     if [[ -f "$DEFAULT_GLOBAL_FILE" ]]; then
-        sed -i '/^[[:space:]]*client_max_body_size\s\+/d; /^[[:space:]]*client_body_timeout\s\+/d' "$DEFAULT_GLOBAL_FILE" || true
+        sed -i '/^[[:space:]]*client_max_body_size[[:space:]]\+/d; /^[[:space:]]*client_body_timeout[[:space:]]\+/d' "$DEFAULT_GLOBAL_FILE" || true
     fi
 
     {
@@ -406,7 +444,7 @@ validate_and_reload() {
         if grep -q "client_max_body_size" /tmp/nginx_file_limit_test.log; then
             print_warn "Detected client_max_body_size conflict in nginx config."
             print_warn "Current references (excluding managed file):"
-            grep -R --line-number -E '^[[:space:]]*client_max_body_size\s+' /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/nginx.conf 2>/dev/null | grep -v "^$DEFAULT_GLOBAL_FILE:"
+            grep -R --line-number -E '^[[:space:]]*client_max_body_size\s+' /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/nginx.conf 2>/dev/null | grep -v "^$DEFAULT_GLOBAL_FILE:" | grep -v "\.bak"
             print_warn "Edit duplicate entries and re-run the script."
         fi
 
