@@ -283,7 +283,7 @@ apply_global_limit() {
 
     # Detect any lingering directive duplicates in other config files
     local foundDupes
-    foundDupes=$(grep -R --line-number -E '^[[:space:]]*client_max_body_size\s+' /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/nginx.conf 2>/dev/null | grep -v "^$DEFAULT_GLOBAL_FILE:" || true)
+    foundDupes=$(grep -R --line-number -E '^[[:space:]]*client_max_body_size\s+' /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/nginx.conf 2>/dev/null | grep -v "^$DEFAULT_GLOBAL_FILE:" | grep -v "\.bak" || true)
     if [[ -n "$foundDupes" ]]; then
         print_warn "Other client_max_body_size definitions exist and may still cause duplicate errors:" 
         echo "$foundDupes"
