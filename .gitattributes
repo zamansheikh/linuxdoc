@@ -1,0 +1,4 @@
+# Keep executable/script files Linux-safe
+*.sh text eol=lf
+*.ssh text eol=lf
+linuxdoc text eol=lf
